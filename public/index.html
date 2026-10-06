@@ -1,396 +1,369 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#08111f">
-  <title>Mapa 3D Inbound • Almoxarifado SLMB</title>
-  <script src="/vendor/lucide.js"></script>
-  <script src="/vendor/three.min.js"></script>
-  <script src="/vendor/OrbitControls.js"></script>
-  <script src="/vendor/xlsx.full.min.js"></script>
-  <style>
-    :root {
-      --bg: #08111f;
-      --panel: rgba(10, 19, 34, .88);
-      --panel-strong: rgba(8, 16, 30, .96);
-      --card: rgba(21, 34, 54, .78);
-      --line: rgba(148, 163, 184, .16);
-      --line-strong: rgba(148, 163, 184, .28);
-      --text: #f8fafc;
-      --muted: #94a3b8;
-      --amber: #f59e0b;
-      --amber-2: #fbbf24;
-      --cyan: #22d3ee;
-      --green: #34d399;
-      --red: #fb7185;
-      --shadow: 0 18px 60px rgba(0, 0, 0, .35);
-    }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mapa 3D Almoxarifado SLMB</title>
+    <!-- Bibliotecas entregues pelo próprio Worker para reduzir bloqueios e aproveitar cache da Cloudflare. -->
+    <script src="/vendor/tailwind.js"></script>
+    <script src="/vendor/lucide.js"></script>
+    <script src="/vendor/three.min.js"></script>
+    <script src="/vendor/OrbitControls.js"></script>
+    <script src="/vendor/xlsx.full.min.js"></script>
 
-    * { box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
-    body {
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      -webkit-font-smoothing: antialiased;
-    }
-    button, input { font: inherit; }
-    button { color: inherit; }
-    #canvas-container { position: fixed; inset: 0; }
-    #canvas-container canvas { display: block; width: 100%; height: 100%; outline: none; }
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #0f172a; font-family: 'Inter', system-ui, -apple-system, sans-serif; color: #f8fafc; }
+        #canvas-container { width: 100vw; height: 100vh; display: block; }
+        .glass { background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); }
+        .glass-card { background: rgba(30, 41, 59, 0.8); backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.08); }
+        
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.6); }
+        ::-webkit-scrollbar-thumb { background: rgba(51, 65, 85, 0.8); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(71, 85, 105, 1); }
 
-    .vignette {
-      position: fixed; inset: 0; pointer-events: none; z-index: 2;
-      background:
-        radial-gradient(circle at 50% 43%, transparent 45%, rgba(3, 8, 18, .18) 78%, rgba(3, 8, 18, .48) 100%),
-        linear-gradient(180deg, rgba(2, 8, 18, .18), transparent 22%, transparent 74%, rgba(2, 8, 18, .18));
-    }
-    .glass {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      box-shadow: var(--shadow);
-      backdrop-filter: blur(18px) saturate(140%);
-      -webkit-backdrop-filter: blur(18px) saturate(140%);
-    }
-    .topbar {
-      position: fixed; z-index: 20; top: 12px; left: 12px; right: 12px;
-      min-height: 70px; display: grid; grid-template-columns: minmax(240px, auto) minmax(280px, 1fr) auto;
-      align-items: center; gap: 14px; padding: 10px 12px; border-radius: 18px;
-    }
-    .brand { min-width: 0; display: flex; align-items: center; gap: 11px; }
-    .brand-icon {
-      width: 44px; height: 44px; flex: 0 0 auto; border-radius: 13px; display: grid; place-items: center;
-      background: linear-gradient(145deg, rgba(245,158,11,.23), rgba(245,158,11,.08));
-      border: 1px solid rgba(245,158,11,.36); color: var(--amber-2);
-    }
-    .brand-copy { min-width: 0; }
-    .brand-title-row { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
-    .brand h1 { margin: 0; font-size: 16px; letter-spacing: .01em; line-height: 1.15; white-space: nowrap; }
-    .brand p { margin: 4px 0 0; color: var(--muted); font-size: 11px; white-space: nowrap; }
-    .pill {
-      display: inline-flex; align-items: center; gap: 5px; min-height: 22px; padding: 3px 8px; border-radius: 999px;
-      border: 1px solid var(--line); background: rgba(15,23,42,.66); color: #cbd5e1; font-size: 10px; font-weight: 700;
-      white-space: nowrap;
-    }
-    .pill.ok { color: #86efac; border-color: rgba(52,211,153,.24); background: rgba(16,185,129,.10); }
-    .sync-dot { width: 7px; height: 7px; border-radius: 50%; background: #64748b; box-shadow: 0 0 0 3px rgba(100,116,139,.12); }
-    .sync-dot.online { background: var(--green); box-shadow: 0 0 0 3px rgba(52,211,153,.13); }
-    .sync-dot.offline { background: var(--amber); box-shadow: 0 0 0 3px rgba(245,158,11,.13); }
+        #tooltip {
+            position: absolute;
+            display: none;
+            pointer-events: none;
+            z-index: 50;
+            transition: opacity 0.15s ease-out;
+        }
 
-    .search-wrap { min-width: 0; display: flex; align-items: center; gap: 8px; }
-    .search-box { position: relative; flex: 1; min-width: 0; }
-    .search-box > svg, .search-box > i { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); width: 17px; height: 17px; color: #64748b; pointer-events: none; }
-    .search-input {
-      width: 100%; height: 44px; border: 1px solid rgba(100,116,139,.34); border-radius: 13px; outline: none;
-      background: rgba(5,12,24,.68); color: var(--text); padding: 0 42px 0 40px; font-size: 13px;
-      transition: border-color .18s, box-shadow .18s, background .18s;
-    }
-    .search-input::placeholder { color: #75839a; }
-    .search-input:focus { border-color: rgba(245,158,11,.72); box-shadow: 0 0 0 3px rgba(245,158,11,.10); background: rgba(5,12,24,.88); }
-    .search-clear {
-      position: absolute; right: 8px; top: 50%; transform: translateY(-50%); width: 30px; height: 30px; border: 0; border-radius: 9px;
-      background: transparent; color: #64748b; cursor: pointer; display: grid; place-items: center;
-    }
-    .search-clear:hover { background: rgba(148,163,184,.10); color: #e2e8f0; }
-    .hidden { display: none !important; }
+        #toast-container {
+            position: fixed;
+            bottom: 1.5rem;
+            right: 1.5rem;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            pointer-events: none;
+        }
+        .toast {
+            background: rgba(30, 41, 59, 0.95);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: white;
+            padding: 1rem;
+            border-radius: 0.75rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            transform: translateX(120%);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .toast.show { transform: translateX(0); }
 
-    .btn {
-      height: 40px; border-radius: 12px; border: 1px solid var(--line); background: rgba(24,38,60,.72); color: #e2e8f0;
-      display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 12px; font-size: 11px; font-weight: 750;
-      cursor: pointer; white-space: nowrap; transition: transform .15s, background .15s, border-color .15s, color .15s;
-    }
-    .btn:hover { background: rgba(40,55,78,.88); border-color: var(--line-strong); }
-    .btn:active { transform: translateY(1px); }
-    .btn svg { width: 16px; height: 16px; }
-    .btn-primary { background: linear-gradient(135deg, #f59e0b, #fbbf24); color: #1f2937; border-color: rgba(251,191,36,.72); box-shadow: 0 8px 22px rgba(245,158,11,.16); }
-    .btn-primary:hover { background: linear-gradient(135deg, #fbbf24, #fcd34d); }
-    .btn-green { background: linear-gradient(135deg, #059669, #10b981); color: white; border-color: rgba(52,211,153,.34); box-shadow: 0 8px 22px rgba(16,185,129,.12); }
-    .btn-green:hover { background: linear-gradient(135deg, #10b981, #34d399); }
-    .actions { display: flex; align-items: center; gap: 7px; }
+        .sync-pill { display:inline-flex; align-items:center; gap:.35rem; }
+        .sync-dot { width:.45rem; height:.45rem; border-radius:999px; background:#94a3b8; box-shadow:0 0 0 3px rgba(148,163,184,.12); }
+        .sync-dot.online { background:#34d399; box-shadow:0 0 0 3px rgba(52,211,153,.12); }
+        .sync-dot.offline { background:#f59e0b; box-shadow:0 0 0 3px rgba(245,158,11,.12); }
+        #sideDrawer.is-open { transform: translateX(0) !important; }
+        @media (max-width: 768px) {
+            header { top:.5rem !important; left:.5rem !important; right:.5rem !important; padding:.75rem !important; gap:.65rem !important; }
+            header > div:first-child { width:100%; }
+            header h1 { font-size:.95rem !important; line-height:1.2; flex-wrap:wrap; }
+            header p { display:none; }
+            header .max-w-xl { max-width:none !important; width:100%; order:3; }
+            header > div:last-child { width:100%; overflow-x:auto; padding-bottom:.1rem; }
+            header > div:last-child button { flex:0 0 auto; }
+            #searchResultsPanel { top:12.25rem !important; left:.5rem !important; right:.5rem !important; width:auto !important; max-height:48vh !important; }
+            #sideDrawer { top:auto !important; left:.5rem !important; right:.5rem !important; bottom:.5rem !important; width:auto !important; max-height:60vh; transform:translateY(115%) !important; border-radius:1rem !important; }
+            #sideDrawer.is-open { transform:translateY(0) !important; }
+            #tooltip { display:none !important; }
+            #toast-container { left:.75rem; right:.75rem; bottom:4.8rem; }
+            .toast { width:100%; }
+        }
 
-    .viewbar {
-      position: fixed; z-index: 18; left: 50%; bottom: 16px; transform: translateX(-50%);
-      display: flex; align-items: center; gap: 3px; padding: 6px; border-radius: 15px; max-width: calc(100vw - 28px); overflow-x: auto;
-      scrollbar-width: none;
-    }
-    .viewbar::-webkit-scrollbar { display: none; }
-    .viewbar .nav-label { display: inline-flex; align-items: center; gap: 6px; padding: 0 9px; color: #94a3b8; font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
-    .view-btn {
-      min-height: 36px; border: 0; border-radius: 10px; background: transparent; color: #aebbd0; padding: 0 10px; cursor: pointer; white-space: nowrap;
-      font-size: 10.5px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; transition: background .15s, color .15s;
-    }
-    .view-btn:hover { background: rgba(148,163,184,.10); color: white; }
-    .view-btn.active { background: rgba(245,158,11,.14); color: #fde68a; box-shadow: inset 0 0 0 1px rgba(245,158,11,.20); }
-    .view-sep { width: 1px; height: 20px; background: var(--line); flex: 0 0 auto; }
+        /* V2 funcional com a identidade visual original */
+        #sideDrawer.open { transform: translateX(0) !important; }
+        #controlHint { display:none; }
+        #statOccupancy { display:none; }
 
-    .stats {
-      position: fixed; z-index: 15; left: 14px; bottom: 15px; width: 210px; border-radius: 16px; padding: 12px;
-    }
-    .stats-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #aab8cd; font-size: 9.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
-    .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 9px; }
-    .stat { padding: 8px; border-radius: 11px; background: rgba(3,10,22,.50); border: 1px solid rgba(100,116,139,.14); }
-    .stat span { display: block; color: #73839b; font-size: 8.5px; line-height: 1.15; }
-    .stat strong { display: block; margin-top: 3px; color: #f8fafc; font-size: 13px; }
-    .stats-date { margin-top: 8px; color: #6f8099; font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .view-btn.active {
+            background: rgba(245,158,11,.14) !important;
+            color: #fde68a !important;
+            box-shadow: inset 0 0 0 1px rgba(245,158,11,.24);
+        }
+        .drawer-nav-v2 {
+            display:grid;
+            grid-template-columns:1fr 1.15fr 1fr;
+            gap:.45rem;
+            padding:.65rem 1rem;
+            border-bottom:1px solid rgba(51,65,85,.8);
+            background:rgba(15,23,42,.42);
+        }
+        .drawer-nav-v2 button {
+            min-height:2.15rem;
+            border-radius:.7rem;
+            border:1px solid rgba(71,85,105,.65);
+            background:rgba(30,41,59,.62);
+            color:#cbd5e1;
+            font-size:.68rem;
+            font-weight:600;
+            cursor:pointer;
+            transition:.18s ease;
+        }
+        .drawer-nav-v2 button:hover { background:rgba(51,65,85,.82); color:white; border-color:rgba(245,158,11,.45); }
+        .drawer-nav-v2 button:disabled { opacity:.35; cursor:not-allowed; }
+        .drawer-nav-v2 .focus-btn { color:#67e8f9; border-color:rgba(34,211,238,.28); }
 
-    .control-hint {
-      position: fixed; z-index: 13; left: 50%; top: 96px; transform: translateX(-50%);
-      border: 1px solid rgba(148,163,184,.14); background: rgba(8,17,31,.62); color: #8fa0b8; backdrop-filter: blur(10px);
-      border-radius: 999px; padding: 7px 11px; font-size: 10px; pointer-events: none; opacity: 1; transition: opacity .35s;
-    }
-    .control-hint.hide { opacity: 0; }
+        .material-card {
+            padding:.75rem;
+            border-radius:.75rem;
+            background:rgba(15,23,42,.82);
+            border:1px solid rgba(71,85,105,.6);
+            font-size:.75rem;
+        }
+        .material-top { display:flex; align-items:center; justify-content:space-between; gap:.75rem; }
+        .material-code { color:#fbbf24; font-weight:700; overflow-wrap:anywhere; }
+        .material-qty { color:#34d399; font-weight:700; white-space:nowrap; }
+        .material-desc { color:#cbd5e1; margin:.25rem 0 0; line-height:1.35; }
+        .empty-state { color:#64748b; padding:1rem; text-align:center; font-size:.75rem; }
 
-    .drawer {
-      position: fixed; z-index: 24; top: 94px; right: 14px; bottom: 14px; width: min(380px, calc(100vw - 28px));
-      border-radius: 18px; transform: translateX(calc(100% + 30px)); transition: transform .28s cubic-bezier(.2,.8,.2,1); overflow: hidden;
-      display: flex; flex-direction: column;
-    }
-    .drawer.open { transform: translateX(0); }
-    .drawer-head { padding: 15px; border-bottom: 1px solid var(--line); background: rgba(5,12,24,.34); }
-    .drawer-title-row { display: flex; align-items: center; gap: 11px; }
-    .pos-badge {
-      width: 44px; height: 44px; border-radius: 13px; display: grid; place-items: center; color: #fde68a; font-weight: 900;
-      background: rgba(245,158,11,.13); border: 1px solid rgba(245,158,11,.28); flex: 0 0 auto;
-    }
-    .drawer-titles { flex: 1; min-width: 0; }
-    .drawer-titles h2 { margin: 0; font-size: 18px; line-height: 1.1; }
-    .drawer-titles p { margin: 4px 0 0; color: #7f8fa7; font-size: 10px; }
-    .icon-btn {
-      width: 38px; height: 38px; display: grid; place-items: center; border-radius: 11px; border: 1px solid var(--line); background: rgba(15,23,42,.64);
-      color: #94a3b8; cursor: pointer; flex: 0 0 auto;
-    }
-    .icon-btn:hover { color: white; border-color: var(--line-strong); background: rgba(30,41,59,.86); }
-    .loc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 12px; }
-    .loc-card { padding: 9px 10px; border-radius: 11px; background: rgba(15,26,44,.68); border: 1px solid rgba(100,116,139,.14); }
-    .loc-card small { display: block; color: #728198; font-size: 8px; text-transform: uppercase; letter-spacing: .06em; }
-    .loc-card strong { display: block; margin-top: 3px; font-size: 11px; color: #dce5f2; }
-    .drawer-nav { display: grid; grid-template-columns: 1fr 1.2fr 1fr; gap: 6px; padding: 10px 15px; border-bottom: 1px solid var(--line); }
-    .drawer-nav button { height: 34px; border-radius: 9px; border: 1px solid var(--line); background: rgba(15,23,42,.58); color: #aab8cd; font-size: 10px; font-weight: 750; cursor: pointer; }
-    .drawer-nav button:hover { color: white; background: rgba(30,41,59,.86); }
-    .drawer-nav .focus-btn { color: #a5f3fc; border-color: rgba(34,211,238,.20); background: rgba(34,211,238,.06); }
-    .drawer-body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px; }
-    .section-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 9px; }
-    .section-title { display: flex; align-items: center; gap: 7px; color: #b8c4d7; font-size: 9.5px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
-    .count-pill { padding: 3px 7px; border-radius: 999px; background: rgba(51,65,85,.52); color: #9aa9be; font: 9px ui-monospace, SFMono-Regular, Menlo, monospace; }
-    .materials { display: grid; gap: 7px; }
-    .material-card { padding: 11px; border-radius: 12px; background: rgba(6,14,27,.62); border: 1px solid rgba(100,116,139,.16); }
-    .material-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-    .material-code { color: #fbbf24; font: 800 11px ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
-    .material-qty { color: #6ee7b7; font: 800 10px ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
-    .material-desc { margin: 5px 0 0; color: #b9c5d7; font-size: 10px; line-height: 1.35; }
-    .empty-state { padding: 28px 10px; text-align: center; color: #697991; font-size: 10px; }
-    .drawer-foot { padding: 10px 14px; border-top: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #76869d; font-size: 9.5px; background: rgba(5,12,24,.28); }
-    .status-active { color: #6ee7b7; font-weight: 800; }
+        .result-card {
+            width:100%;
+            display:block;
+            text-align:left;
+            padding:.65rem;
+            border-radius:.65rem;
+            border:1px solid rgba(71,85,105,.7);
+            background:rgba(30,41,59,.82);
+            cursor:pointer;
+            transition:.18s ease;
+        }
+        .result-card:hover { border-color:#f59e0b; background:rgba(51,65,85,.9); }
+        .result-key { color:#fbbf24; font-weight:700; font-size:.75rem; }
+        .result-desc { color:#cbd5e1; margin-top:.15rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:.7rem; }
+        .result-meta { color:#64748b; margin-top:.2rem; font-size:.63rem; }
 
-    .results {
-      position: fixed; z-index: 23; top: 94px; left: 14px; width: min(330px, calc(100vw - 28px)); max-height: calc(100vh - 180px);
-      border-radius: 16px; overflow: hidden; display: flex; flex-direction: column;
-    }
-    .results-head { padding: 12px; border-bottom: 1px solid var(--line); background: rgba(5,12,24,.32); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-    .results-head h3 { margin: 0; font-size: 12px; }
-    .results-head p { margin: 3px 0 0; color: #73839b; font-size: 9px; }
-    .results-list { padding: 8px; display: grid; gap: 6px; overflow-y: auto; }
-    .result-card { width: 100%; text-align: left; border: 1px solid rgba(100,116,139,.16); background: rgba(9,18,33,.72); border-radius: 11px; padding: 9px; color: inherit; cursor: pointer; }
-    .result-card:hover { border-color: rgba(245,158,11,.36); background: rgba(22,32,50,.88); }
-    .result-key { color: #fbbf24; font: 850 10.5px ui-monospace, SFMono-Regular, Menlo, monospace; }
-    .result-desc { color: #a9b7ca; font-size: 9.5px; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .result-meta { color: #64748b; font-size: 8.5px; margin-top: 4px; }
+        #tooltip { display:block; }
+        #tooltip.hidden { display:none !important; }
+        #dropZone.drag { border-color:#10b981 !important; background:rgba(15,23,42,.82) !important; }
+        .toast.success svg { color:#34d399; }
+        .toast.error svg { color:#fb7185; }
+        .toast.info svg { color:#22d3ee; }
 
-    #tooltip {
-      position: fixed; z-index: 35; pointer-events: none; min-width: 175px; max-width: 260px; padding: 10px 11px; border-radius: 12px;
-      background: rgba(6,14,27,.92); border: 1px solid rgba(245,158,11,.25); box-shadow: 0 14px 38px rgba(0,0,0,.30); backdrop-filter: blur(12px);
-    }
-    .tt-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-    .tt-key { color: #fbbf24; font: 900 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
-    .tt-status { padding: 2px 6px; border-radius: 999px; background: rgba(16,185,129,.11); color: #6ee7b7; font-size: 8px; font-weight: 800; }
-    .tt-line { margin-top: 6px; color: #91a1b8; font-size: 9px; }
-    .tt-line strong { color: #dbe5f3; }
-
-    .modal-backdrop {
-      position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: rgba(2,8,18,.76); backdrop-filter: blur(8px);
-    }
-    .modal { width: min(450px, 100%); border-radius: 18px; padding: 18px; }
-    .modal-head { display: flex; align-items: center; gap: 11px; }
-    .modal-icon { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; background: rgba(16,185,129,.10); border: 1px solid rgba(52,211,153,.22); color: #6ee7b7; }
-    .modal-head h3 { margin: 0; font-size: 16px; }
-    .modal-head p { margin: 3px 0 0; color: #7b8aa1; font-size: 10px; }
-    .field-label { display: block; margin: 15px 0 6px; color: #c3cedd; font-size: 10px; font-weight: 750; }
-    .field { width: 100%; height: 42px; border-radius: 11px; border: 1px solid rgba(100,116,139,.26); background: rgba(3,10,22,.55); color: white; padding: 0 12px; outline: none; font-size: 13px; }
-    .field:focus { border-color: rgba(52,211,153,.50); box-shadow: 0 0 0 3px rgba(52,211,153,.08); }
-    .field-help { margin: 5px 0 0; color: #607089; font-size: 8.5px; }
-    .dropzone {
-      margin-top: 13px; min-height: 145px; border-radius: 14px; border: 1.5px dashed rgba(100,116,139,.48); background: rgba(3,10,22,.34);
-      display: grid; place-items: center; text-align: center; padding: 22px; cursor: pointer; transition: border-color .18s, background .18s;
-    }
-    .dropzone:hover, .dropzone.drag { border-color: rgba(52,211,153,.55); background: rgba(16,185,129,.045); }
-    .dropzone svg { width: 38px; height: 38px; color: #74849b; margin-bottom: 8px; }
-    .dropzone strong { display: block; font-size: 12px; color: #d6dfec; }
-    .dropzone span { display: block; margin-top: 4px; color: #74849b; font-size: 9.5px; }
-
-    #toast-container { position: fixed; z-index: 80; right: 16px; bottom: 76px; display: grid; gap: 8px; width: min(390px, calc(100vw - 32px)); pointer-events: none; }
-    .toast { transform: translateX(115%); opacity: 0; transition: transform .26s cubic-bezier(.2,.8,.2,1), opacity .26s; border-radius: 13px; padding: 11px 12px; display: flex; align-items: center; gap: 9px; background: rgba(8,17,31,.94); border: 1px solid var(--line); box-shadow: var(--shadow); color: #dce5f1; font-size: 10.5px; }
-    .toast.show { transform: translateX(0); opacity: 1; }
-    .toast svg { width: 17px; height: 17px; flex: 0 0 auto; }
-    .toast.success svg { color: #6ee7b7; }
-    .toast.error svg { color: #fb7185; }
-    .toast.info svg { color: #67e8f9; }
-
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: rgba(15,23,42,.42); }
-    ::-webkit-scrollbar-thumb { background: rgba(100,116,139,.42); border-radius: 999px; }
-
-    @media (max-width: 1100px) {
-      .topbar { grid-template-columns: auto 1fr; }
-      .actions { grid-column: 1 / -1; justify-content: flex-end; }
-      .control-hint { top: 144px; }
-      .drawer, .results { top: 148px; }
-    }
-    @media (max-width: 760px) {
-      .topbar { top: 7px; left: 7px; right: 7px; padding: 8px; border-radius: 15px; grid-template-columns: 1fr; gap: 7px; }
-      .brand-icon { width: 38px; height: 38px; border-radius: 11px; }
-      .brand h1 { font-size: 13px; }
-      .brand p { display: none; }
-      .brand-title-row .pill:first-of-type { display: none; }
-      .search-input { height: 42px; font-size: 12px; }
-      .actions { grid-column: auto; justify-content: flex-start; overflow-x: auto; scrollbar-width: none; }
-      .actions::-webkit-scrollbar { display: none; }
-      .actions .btn { flex: 0 0 auto; height: 36px; padding: 0 10px; }
-      .control-hint { display: none; }
-      .results { top: 165px; left: 7px; right: 7px; width: auto; max-height: 42vh; }
-      .drawer { top: auto; left: 7px; right: 7px; bottom: 7px; width: auto; max-height: 58vh; transform: translateY(calc(100% + 20px)); border-radius: 16px; }
-      .drawer.open { transform: translateY(0); }
-      .drawer-head { padding: 12px; }
-      .drawer-body { padding: 11px; }
-      .viewbar { bottom: 7px; max-width: calc(100vw - 14px); border-radius: 13px; }
-      .stats { display: none; }
-      #tooltip { display: none !important; }
-      #toast-container { left: 10px; right: 10px; bottom: 66px; width: auto; }
-      .viewbar .nav-label { display: none; }
-      .view-btn { min-height: 34px; padding: 0 9px; }
-    }
-  </style>
+        @media (max-width: 768px) {
+            #sideDrawer.open { transform:translateY(0) !important; }
+            .drawer-nav-v2 { padding:.5rem .75rem; }
+        }
+    </style>
 </head>
-<body>
-  <div id="canvas-container"></div>
-  <div class="vignette"></div>
+<body class="select-none">
 
-  <header class="topbar glass">
-    <div class="brand">
-      <div class="brand-icon"><i data-lucide="warehouse"></i></div>
-      <div class="brand-copy">
-        <div class="brand-title-row">
-          <h1>Mapa 3D Almoxarifado SLMB</h1>
-          <span class="pill ok">3D Ativo</span>
-          <span class="pill"><span id="syncDot" class="sync-dot"></span><span id="syncText">Sincronizando…</span></span>
+    <!-- 3D Canvas -->
+    <div id="canvas-container"></div>
+
+    <!-- Header / Top Navigation Bar -->
+    <header class="absolute top-4 left-4 right-4 glass rounded-2xl px-6 py-3.5 flex flex-wrap items-center justify-between z-20 gap-4 shadow-2xl">
+        <div class="flex items-center gap-3">
+            <div class="p-2.5 bg-amber-500/20 text-amber-400 rounded-xl border border-amber-500/30 flex items-center justify-center">
+                <i data-lucide="box" class="w-6 h-6"></i>
+            </div>
+            <div>
+                <h1 class="font-bold text-lg text-white tracking-wide flex items-center gap-2">
+                    Mapa 3D Almoxarifado SLMB
+                    <span class="text-xs font-normal px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">3D Ativo</span>
+                    <span id="syncBadge" class="sync-pill text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700" title="Status da base compartilhada">
+                        <span id="syncDot" class="sync-dot"></span><span id="syncText">Sincronizando…</span>
+                    </span>
+                </h1>
+                <p class="text-xs text-slate-400">Consulta de Endereços, Posições e Estoque SAP</p>
+            </div>
         </div>
-        <p>Consulta inteligente de endereços, posições e materiais do Inbound</p>
-      </div>
-    </div>
 
-    <div class="search-wrap">
-      <div class="search-box">
-        <i data-lucide="search"></i>
-        <input id="searchInput" class="search-input" autocomplete="off" placeholder="Endereço ou material — ex.: ZD05, INEM007210…">
-        <button id="clearSearchBtn" class="search-clear hidden" aria-label="Limpar busca"><i data-lucide="x"></i></button>
-      </div>
-      <button id="searchBtn" class="btn btn-primary"><i data-lucide="locate-fixed"></i><span>Buscar</span></button>
-    </div>
-
-    <div class="actions">
-      <button id="toggleLabelsBtn" class="btn" title="Alternar nível de rótulos"><i data-lucide="tags"></i><span id="labelsBtnText">Rótulos: Auto</span></button>
-      <button id="toggleHeatmapBtn" class="btn"><i data-lucide="flame"></i><span id="heatmapBtnText">Modo Calor</span></button>
-      <button id="uploadExcelBtn" class="btn btn-green"><i data-lucide="file-spreadsheet"></i><span>Atualizar Planilha</span></button>
-    </div>
-  </header>
-
-  <div id="controlHint" class="control-hint">Arraste para girar • Scroll para aproximar • Clique numa posição • / para pesquisar</div>
-
-  <div class="viewbar glass" id="viewbar">
-    <span class="nav-label"><i data-lucide="compass" style="width:14px"></i> Visões</span>
-    <button class="view-btn active" data-view="overview" id="viewOverview"><i data-lucide="scan"></i> Geral</button>
-    <div class="view-sep"></div>
-    <button class="view-btn" data-view="RUA1">Rua 1 (C/D)</button>
-    <button class="view-btn" data-view="RUA2">Rua 2 (E/F)</button>
-    <button class="view-btn" data-view="RUA3">Rua 3 (G/H)</button>
-    <button class="view-btn" data-view="RUA4">Rua 4 (I)</button>
-    <button class="view-btn" data-view="RUA5">Rua 5 (J)</button>
-    <div class="view-sep"></div>
-    <button class="view-btn" data-view="top"><i data-lucide="layers-3"></i> Topo 2D</button>
-  </div>
-
-  <section class="stats glass" aria-label="Resumo do estoque">
-    <div class="stats-head"><span>Resumo do estoque</span><i data-lucide="bar-chart-3" style="width:14px"></i></div>
-    <div class="stats-grid">
-      <div class="stat"><span>Posições</span><strong id="statTotalPositions">—</strong></div>
-      <div class="stat"><span>Ocupadas</span><strong id="statOccupiedPositions">—</strong></div>
-      <div class="stat"><span>Ocupação</span><strong id="statOccupancy">—</strong></div>
-    </div>
-    <div class="stats-date" id="lastUpdateText">Última atualização: —</div>
-  </section>
-
-  <aside id="sideDrawer" class="drawer glass" aria-label="Detalhes da posição">
-    <div class="drawer-head">
-      <div class="drawer-title-row">
-        <div id="drawerBadge" class="pos-badge">--</div>
-        <div class="drawer-titles">
-          <h2 id="drawerTitle">Posição --</h2>
-          <p id="drawerSubtitle">Endereço do Almoxarifado SLMB</p>
+        <!-- Search Bar -->
+        <div class="flex-1 max-w-xl mx-auto flex items-center gap-2">
+            <div class="relative w-full">
+                <i data-lucide="search" class="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                <input id="searchInput" type="text" 
+                    placeholder="Pesquisar por Endereço (ex: ZC01) ou Material (ex: INCO168841)..." 
+                    class="w-full bg-slate-900/80 text-sm text-slate-100 placeholder-slate-400 pl-10 pr-10 py-2.5 rounded-xl border border-slate-700/80 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all">
+                <button id="clearSearchBtn" class="hidden absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+            <button id="searchBtn" class="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-semibold text-sm rounded-xl transition-all shadow-lg shadow-amber-500/20 flex items-center gap-2">
+                <span>Buscar</span>
+            </button>
         </div>
-        <button id="closeDrawerBtn" class="icon-btn" aria-label="Fechar"><i data-lucide="x"></i></button>
-      </div>
-      <div class="loc-grid">
-        <div class="loc-card"><small>Localização</small><strong id="drawerLocation">Rua -- | Col --</strong></div>
-        <div class="loc-card"><small>Nível</small><strong id="drawerLevel">Nível --</strong></div>
-      </div>
-    </div>
-    <div class="drawer-nav">
-      <button id="prevPosBtn">← Anterior</button>
-      <button id="centerPosBtn" class="focus-btn"><i data-lucide="crosshair" style="width:12px;vertical-align:-2px"></i> Centralizar</button>
-      <button id="nextPosBtn">Próxima →</button>
-    </div>
-    <div class="drawer-body">
-      <div class="section-row">
-        <div class="section-title"><i data-lucide="package-search" style="width:14px"></i> Materiais alocados</div>
-        <span id="drawerMaterialCount" class="count-pill">0 materiais</span>
-      </div>
-      <div id="drawerItemList" class="materials"></div>
-    </div>
-    <div class="drawer-foot"><span>Status: <strong id="drawerStatusText" class="status-active">Ativo</strong></span><span id="drawerFocusText">Modo foco</span></div>
-  </aside>
 
-  <section id="searchResultsPanel" class="results glass hidden" aria-label="Resultados da busca">
-    <div class="results-head">
-      <div><h3>Resultados da busca</h3><p id="searchResultsCount">0 posições encontradas</p></div>
-      <button id="closeResultsBtn" class="icon-btn" aria-label="Fechar resultados"><i data-lucide="x"></i></button>
+        <!-- Action Buttons -->
+        <div class="flex items-center gap-2">
+            <button id="toggleLabelsBtn" class="px-3.5 py-2.5 glass-card hover:bg-slate-800 text-slate-200 text-xs font-medium rounded-xl transition-all flex items-center gap-2 border border-slate-700/60">
+                <i data-lucide="tag" class="w-4 h-4 text-cyan-400"></i>
+                <span id="labelsBtnText">Ocultar Rótulos</span>
+            </button>
+            <button id="toggleHeatmapBtn" class="px-3.5 py-2.5 glass-card hover:bg-slate-800 text-slate-200 text-xs font-medium rounded-xl transition-all flex items-center gap-2 border border-slate-700/60">
+                <i data-lucide="flame" class="w-4 h-4 text-amber-400"></i>
+                <span id="heatmapBtnText">Modo Calor</span>
+            </button>
+            <button id="uploadExcelBtn" class="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-xl transition-all shadow-lg shadow-emerald-600/20 flex items-center gap-2">
+                <i data-lucide="file-spreadsheet" class="w-4 h-4"></i>
+                <span>Atualizar Planilha</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Camera View Presets Bar -->
+    <div id="viewbar" class="absolute bottom-6 left-1/2 -translate-x-1/2 glass rounded-2xl px-4 py-2.5 flex items-center gap-2 z-20 shadow-2xl overflow-x-auto max-w-[90vw]">
+        <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider px-2 border-r border-slate-700/60 mr-1 flex items-center gap-1.5">
+            <i data-lucide="compass" class="w-3.5 h-3.5 text-amber-400"></i> Visões
+        </span>
+        <button id="viewOverview" data-view="overview" class="view-btn active px-3 py-1.5 hover:bg-slate-800/80 text-slate-300 hover:text-white text-xs rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap">
+            <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i> Visão Geral
+        </button>
+        <div class="h-4 w-px bg-slate-700/60 mx-1"></div>
+        <button data-view="RUA1" class="view-btn px-3 py-1.5 hover:bg-slate-800/80 text-slate-300 hover:text-white text-xs rounded-lg transition-all whitespace-nowrap">Rua 1 (C/D)</button>
+        <button data-view="RUA2" class="view-btn px-3 py-1.5 hover:bg-slate-800/80 text-slate-300 hover:text-white text-xs rounded-lg transition-all whitespace-nowrap">Rua 2 (E/F)</button>
+        <button data-view="RUA3" class="view-btn px-3 py-1.5 hover:bg-slate-800/80 text-slate-300 hover:text-white text-xs rounded-lg transition-all whitespace-nowrap">Rua 3 (G/H)</button>
+        <button data-view="RUA4" class="view-btn px-3 py-1.5 hover:bg-slate-800/80 text-slate-300 hover:text-white text-xs rounded-lg transition-all whitespace-nowrap">Rua 4 (I)</button>
+        <button data-view="RUA5" class="view-btn px-3 py-1.5 hover:bg-slate-800/80 text-slate-300 hover:text-white text-xs rounded-lg transition-all whitespace-nowrap">Rua 5 (J)</button>
+        <div class="h-4 w-px bg-slate-700/60 mx-1"></div>
+        <button data-view="top" class="view-btn px-3 py-1.5 hover:bg-slate-800/80 text-slate-300 hover:text-white text-xs rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap">
+            <i data-lucide="layers" class="w-3.5 h-3.5 text-amber-400"></i> Topo (2D)
+        </button>
     </div>
-    <div id="searchResultsList" class="results-list"></div>
-  </section>
 
-  <div id="tooltip" class="hidden">
-    <div class="tt-top"><span id="ttPosName" class="tt-key">ZD05</span><span id="ttStatus" class="tt-status">Ocupado</span></div>
-    <div class="tt-line">Corredor: <strong id="ttCorredor">—</strong></div>
-    <div class="tt-line">Materiais: <strong id="ttItemCount">0</strong></div>
-  </div>
-
-  <div id="uploadModal" class="modal-backdrop hidden">
-    <div class="modal glass">
-      <div class="modal-head">
-        <div class="modal-icon"><i data-lucide="sheet"></i></div>
-        <div style="flex:1"><h3>Atualizar Dados</h3><p>Publique uma nova base ZMM023 para todos os usuários</p></div>
-        <button id="closeModalBtn" class="icon-btn" aria-label="Fechar"><i data-lucide="x"></i></button>
-      </div>
-      <label class="field-label" for="adminKeyInput">Chave de atualização</label>
-      <input id="adminKeyInput" class="field" type="password" autocomplete="off" placeholder="Digite a chave administrativa">
-      <p class="field-help">A chave é usada somente nesta publicação e não fica salva no navegador.</p>
-      <div id="dropZone" class="dropzone" role="button" tabindex="0" aria-label="Selecionar planilha">
-        <div><i data-lucide="cloud-upload"></i><strong>Arraste a planilha aqui</strong><span>ou clique para selecionar .xlsx, .xls ou .csv</span></div>
-        <input id="excelFileInput" type="file" accept=".xlsx,.xls,.csv" class="hidden">
-      </div>
+    <!-- Stats Badge Floating -->
+    <div class="absolute bottom-6 left-6 glass rounded-2xl p-4 hidden md:flex flex-col gap-2 z-20 shadow-2xl border border-slate-700/60 min-w-[200px]">
+        <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+            <i data-lucide="bar-chart-3" class="w-3.5 h-3.5 text-amber-400"></i> Resumo do Estoque
+        </div>
+        <div id="lastUpdateText" class="text-[10px] text-slate-500">Última atualização: --</div><span id="statOccupancy" class="hidden"></span><div id="controlHint" class="hidden"></div>
+        <div class="grid grid-cols-2 gap-2 mt-1 text-xs">
+            <div class="bg-slate-900/60 p-2 rounded-xl border border-slate-800">
+                <span class="text-slate-400 block text-[10px]">Posições Totais</span>
+                <span id="statTotalPositions" class="text-sm font-bold text-slate-100">--</span>
+            </div>
+            <div class="bg-slate-900/60 p-2 rounded-xl border border-slate-800">
+                <span class="text-slate-400 block text-[10px]">Ocupadas</span>
+                <span id="statOccupiedPositions" class="text-sm font-bold text-amber-400">--</span>
+            </div>
+        </div>
     </div>
-  </div>
 
-  <div id="toast-container"></div>
+    <!-- Side Panel Drawer -->
+    <aside id="sideDrawer" class="absolute top-24 bottom-6 right-6 w-96 glass rounded-2xl shadow-2xl z-20 flex flex-col transform translate-x-[115%] transition-transform duration-300 ease-out border border-slate-700/80 overflow-hidden">
+        <div class="p-5 border-b border-slate-700/80 flex items-center justify-between bg-slate-900/60">
+            <div class="flex items-center gap-3">
+                <div id="drawerBadge" class="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center font-bold text-base">
+                    --
+                </div>
+                <div>
+                    <h2 id="drawerTitle" class="font-bold text-slate-100 text-lg leading-tight">Posição --</h2>
+                    <p id="drawerSubtitle" class="text-xs text-slate-400">Endereço do Almoxarifado SLMB</p>
+                </div>
+            </div>
+            <button id="closeDrawerBtn" class="p-2 hover:bg-slate-800 rounded-xl text-slate-400 hover:text-white transition-all">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+
+        <div class="p-4 bg-slate-900/40 border-b border-slate-800 flex items-center justify-between gap-2 text-xs">
+            <div class="flex-1 bg-slate-800/60 p-2.5 rounded-xl border border-slate-700/50">
+                <span class="text-slate-400 block text-[10px] uppercase">Localização</span>
+                <span id="drawerLocation" class="font-semibold text-slate-200">Rua -- | Coluna --</span>
+            </div>
+            <div class="flex-1 bg-slate-800/60 p-2.5 rounded-xl border border-slate-700/50">
+                <span class="text-slate-400 block text-[10px] uppercase">Nível</span>
+                <span id="drawerLevel" class="font-semibold text-slate-200">Nível --</span>
+            </div>
+        </div>
+
+
+        <div class="drawer-nav-v2">
+            <button id="prevPosBtn">← Anterior</button>
+            <button id="centerPosBtn" class="focus-btn">◎ Centralizar</button>
+            <button id="nextPosBtn">Próxima →</button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-4 space-y-3">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <i data-lucide="list" class="w-3.5 h-3.5 text-amber-400"></i> Materiais Alocados
+                </span>
+                <span id="drawerMaterialCount" class="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-mono">0 itens</span>
+            </div>
+
+            <div id="drawerItemList" class="space-y-2">
+                <!-- Dynamic Item Cards -->
+            </div>
+        </div>
+
+        <div class="p-4 bg-slate-900/80 border-t border-slate-800 text-xs flex items-center justify-between text-slate-400">
+            <span>Status: <strong id="drawerStatusText" class="text-emerald-400">Ativo</strong></span><span id="drawerFocusText" class="text-slate-500">Foco inteligente</span>
+        </div>
+    </aside>
+
+    <!-- Search Results Panel -->
+    <div id="searchResultsPanel" class="absolute top-24 left-6 w-80 glass rounded-2xl shadow-2xl z-20 flex flex-col hidden border border-slate-700/80 overflow-hidden max-h-[75vh]">
+        <div class="p-4 border-b border-slate-700/80 bg-slate-900/60 flex items-center justify-between">
+            <div>
+                <h3 class="font-bold text-sm text-slate-100 flex items-center gap-2">
+                    <i data-lucide="layers" class="w-4 h-4 text-amber-400"></i>
+                    Resultados da Busca
+                </h3>
+                <p id="searchResultsCount" class="text-xs text-slate-400">0 posições encontradas</p>
+            </div>
+            <button id="closeResultsBtn" class="p-1 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white">
+                <i data-lucide="x" class="w-4 h-4"></i>
+            </button>
+        </div>
+        <div id="searchResultsList" class="p-3 overflow-y-auto space-y-2 flex-1">
+            <!-- Position Result Cards -->
+        </div>
+    </div>
+
+    <!-- 3D Hover Tooltip -->
+    <div id="tooltip" class="hidden glass-card rounded-xl p-3 shadow-2xl border border-amber-500/30 text-xs min-w-[160px]">
+        <div class="flex items-center justify-between gap-2 border-b border-slate-700/60 pb-1.5 mb-1.5">
+            <span id="ttPosName" class="font-bold text-amber-400 text-sm">ZC01</span>
+            <span id="ttStatus" class="px-1.5 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-400 font-semibold">Ocupado</span>
+        </div>
+        <div class="space-y-1 text-slate-300 text-[11px]">
+            <p><span class="text-slate-400">Corredor:</span> <strong id="ttCorredor" class="text-slate-200">--</strong></p>
+            <p><span class="text-slate-400">Materiais:</span> <strong id="ttItemCount" class="text-slate-200">0</strong></p>
+        </div>
+    </div>
+
+    <!-- Excel Upload Modal -->
+    <div id="uploadModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="glass rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-700 relative">
+            <button id="closeModalBtn" class="absolute top-4 right-4 text-slate-400 hover:text-white">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+            <div class="flex items-center gap-3 mb-4">
+                <div class="p-3 bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/30">
+                    <i data-lucide="file-spreadsheet" class="w-6 h-6"></i>
+                </div>
+                <div>
+                    <h3 class="font-bold text-lg text-white">Atualizar Dados</h3>
+                    <p class="text-xs text-slate-400">Importe a planilha ZMM023 (.xlsx)</p>
+                </div>
+            </div>
+            
+            <div class="mb-4">
+                <label for="adminKeyInput" class="block text-xs font-semibold text-slate-300 mb-1.5">Chave de atualização</label>
+                <input id="adminKeyInput" type="password" autocomplete="current-password" placeholder="Digite a chave para publicar a nova base"
+                    class="w-full bg-slate-900/80 text-sm text-slate-100 placeholder-slate-500 px-3.5 py-2.5 rounded-xl border border-slate-700 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
+                <p class="text-[10px] text-slate-500 mt-1.5">A chave só é usada nesta atualização e não fica salva permanentemente.</p>
+            </div>
+
+            <div id="dropZone" class="border-2 border-dashed border-slate-700 hover:border-emerald-500 rounded-xl p-8 text-center cursor-pointer transition-all bg-slate-900/40 hover:bg-slate-900/80">
+                <i data-lucide="upload-cloud" class="w-10 h-10 text-slate-400 mx-auto mb-2"></i>
+                <p class="text-sm font-medium text-slate-200">Arraste a planilha aqui</p>
+                <p class="text-xs text-slate-400 mt-1">ou clique para procurar</p>
+                <input type="file" id="excelFileInput" accept=".xlsx, .xls, .csv" class="hidden">
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Toast Container -->
+    <div id="toast-container"></div>
 
   <script>
     'use strict';
@@ -601,8 +574,8 @@
     function initThreeJS() {
       const container = $('canvas-container');
       scene = new THREE.Scene();
-      scene.background = new THREE.Color(0x08111f);
-      scene.fog = new THREE.FogExp2(0x08111f, 0.0105);
+      scene.background = new THREE.Color(0x0f172a);
+      scene.fog = new THREE.FogExp2(0x0f172a, 0.012);
 
       camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, .1, 400);
       camera.position.set(24, 17, 33);
@@ -631,9 +604,9 @@
       controls.target.set(0, 3.2, -4.5);
       controls.screenSpacePanning = true;
 
-      const hemi = new THREE.HemisphereLight(0xdbeafe, 0x09101c, .92);
+      const hemi = new THREE.HemisphereLight(0xffffff, 0x0f172a, .78);
       scene.add(hemi);
-      const key = new THREE.DirectionalLight(0xffffff, 1.05);
+      const key = new THREE.DirectionalLight(0xffffff, .88);
       key.position.set(22, 31, 18);
       key.castShadow = renderer.shadowMap.enabled;
       if (key.castShadow) {
@@ -641,18 +614,18 @@
         key.shadow.camera.left = -30; key.shadow.camera.right = 30; key.shadow.camera.top = 30; key.shadow.camera.bottom = -30;
       }
       scene.add(key);
-      const fill = new THREE.DirectionalLight(0x6ba8ff, .28);
+      const fill = new THREE.DirectionalLight(0x94a3b8, .16);
       fill.position.set(-20, 12, -18); scene.add(fill);
-      const warm = new THREE.PointLight(0xf59e0b, .32, 45);
+      const warm = new THREE.PointLight(0xf59e0b, .22, 45);
       warm.position.set(0, 9, -7); scene.add(warm);
 
       const floor = new THREE.Mesh(
         new THREE.PlaneGeometry(90, 72),
-        new THREE.MeshStandardMaterial({ color: 0x111b2c, roughness: .96, metalness: .02 })
+        new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: .84, metalness: .02 })
       );
       floor.rotation.x = -Math.PI / 2; floor.position.z = -4.5; floor.receiveShadow = true; scene.add(floor);
 
-      const grid = new THREE.GridHelper(90, 60, 0x35445b, 0x1b293c);
+      const grid = new THREE.GridHelper(90, 60, 0x334155, 0x1e293b);
       grid.position.set(0, .012, -4.5);
       if (Array.isArray(grid.material)) grid.material.forEach(m => { m.opacity = .27; m.transparent = true; });
       else { grid.material.opacity = .27; grid.material.transparent = true; }
@@ -705,9 +678,9 @@
     }
 
     function generateWarehouseLayout() {
-      const uprightMat = new THREE.MeshStandardMaterial({ color: 0x314158, roughness: .52, metalness: .62 });
-      const beamMat = new THREE.MeshStandardMaterial({ color: 0xb66f08, roughness: .48, metalness: .34 });
-      const deckMat = new THREE.MeshStandardMaterial({ color: 0x26364d, roughness: .72, metalness: .36, transparent: true, opacity: .78 });
+      const uprightMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: .52, metalness: .62 });
+      const beamMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: .48, metalness: .26 });
+      const deckMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: .72, metalness: .30, transparent: true, opacity: .58 });
       const bootMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: .42 });
       const disabledMat = new THREE.MeshStandardMaterial({ color: 0x475569, transparent: true, opacity: .13, roughness: .9 });
 
@@ -715,7 +688,7 @@
         const xOffset = -((cfg.cols * COL_WIDTH) / 2) + COL_WIDTH / 2;
         createRackFrame(cfg, xOffset, uprightMat, beamMat, deckMat, bootMat);
 
-        const corridorSign = createLabelSprite(cfg.name, 4.0, 1.02, { kind: 'corridor', fontSize: 60, bg: 'rgba(7,16,29,.94)', border: 'rgba(245,158,11,.52)', color: '#f8fafc' });
+        const corridorSign = createLabelSprite(cfg.name, 4.0, 1.02, { kind: 'corridor', fontSize: 60, bg: 'rgba(15,23,42,.94)', border: 'rgba(245,158,11,.52)', color: '#f8fafc' });
         corridorSign.position.set(xOffset - COL_WIDTH * .15, RACK_LEVELS * LEVEL_HEIGHT + 1.0, cfg.z + cfg.faceDir * .72);
         corridorSign.userData.corridor = corrCode;
         scene.add(corridorSign); corridorLabels.push(corridorSign);
@@ -723,7 +696,7 @@
         for (let col = 0; col < cfg.cols; col++) {
           const start = col * 5 + 1;
           const end = Math.min(start + 4, cfg.maxNum);
-          const bay = createLabelSprite(`${cfg.letter}${String(start).padStart(2,'0')}–${String(end).padStart(2,'0')}`, 1.85, .48, { kind: 'bay', fontSize: 56, bg: 'rgba(8,17,31,.91)', border: 'rgba(148,163,184,.38)', color: '#d8e2ef', lineWidth: 4 });
+          const bay = createLabelSprite(`${cfg.letter}${String(start).padStart(2,'0')}–${String(end).padStart(2,'0')}`, 1.85, .48, { kind: 'bay', fontSize: 56, bg: 'rgba(30,41,59,.92)', border: 'rgba(148,163,184,.38)', color: '#d8e2ef', lineWidth: 4 });
           bay.position.set(xOffset + col * COL_WIDTH, RACK_LEVELS * LEVEL_HEIGHT + .35, cfg.z + cfg.faceDir * .69);
           bay.userData.street = cfg.street;
           scene.add(bay); bayLabels.push(bay);
@@ -751,7 +724,7 @@
             slot.add(disabledBox);
           }
 
-          const label = createLabelSprite(posKey, .96, .38, { kind: 'position', fontSize: 68, bg: 'rgba(5,12,24,.96)', border: 'rgba(245,158,11,.75)', lineWidth: 5 });
+          const label = createLabelSprite(posKey, .96, .38, { kind: 'position', fontSize: 68, bg: 'rgba(15,23,42,.96)', border: 'rgba(245,158,11,.75)', lineWidth: 5 });
           label.position.set(0, -.05, cfg.faceDir * (RACK_DEPTH / 2 + .18));
           label.visible = false;
           label.userData.positionKey = posKey;
