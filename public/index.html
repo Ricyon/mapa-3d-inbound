@@ -62,19 +62,95 @@
         .sync-dot.offline { background:#f59e0b; box-shadow:0 0 0 3px rgba(245,158,11,.12); }
         #sideDrawer.is-open { transform: translateX(0) !important; }
         @media (max-width: 768px) {
-            header { top:.5rem !important; left:.5rem !important; right:.5rem !important; padding:.75rem !important; gap:.65rem !important; }
-            header > div:first-child { width:100%; }
-            header h1 { font-size:.95rem !important; line-height:1.2; flex-wrap:wrap; }
+            body { overscroll-behavior:none; }
+            header {
+                top:.45rem !important; left:.45rem !important; right:.45rem !important;
+                padding:.65rem !important; gap:.55rem !important;
+                display:grid !important; grid-template-columns:1fr !important;
+                max-height:none !important; border-radius:1rem !important;
+            }
+            header > div:first-child {
+                width:100%; min-width:0; display:grid !important;
+                grid-template-columns:auto 1fr; align-items:center; gap:.55rem !important;
+            }
+            header > div:first-child > div:first-child {
+                width:2.35rem !important; height:2.35rem !important; padding:.45rem !important; border-radius:.75rem !important;
+            }
+            header h1 {
+                font-size:.9rem !important; line-height:1.15; gap:.35rem !important;
+                flex-wrap:wrap; white-space:normal;
+            }
+            header h1 > span:first-of-type { display:none !important; }
+            #syncBadge { font-size:.62rem !important; padding:.2rem .45rem !important; }
             header p { display:none; }
-            header .max-w-xl { max-width:none !important; width:100%; order:3; }
-            header > div:last-child { width:100%; overflow-x:auto; padding-bottom:.1rem; }
-            header > div:last-child button { flex:0 0 auto; }
-            #searchResultsPanel { top:12.25rem !important; left:.5rem !important; right:.5rem !important; width:auto !important; max-height:48vh !important; }
-            #sideDrawer { top:auto !important; left:.5rem !important; right:.5rem !important; bottom:.5rem !important; width:auto !important; max-height:60vh; transform:translateY(115%) !important; border-radius:1rem !important; }
-            #sideDrawer.is-open { transform:translateY(0) !important; }
+
+            header .max-w-xl {
+                max-width:none !important; width:100% !important; margin:0 !important; order:3;
+                display:grid !important; grid-template-columns:minmax(0,1fr) auto; gap:.45rem !important;
+            }
+            #searchInput {
+                min-width:0; width:100% !important; font-size:16px !important;
+                padding-top:.7rem !important; padding-bottom:.7rem !important;
+            }
+            #searchBtn {
+                min-width:4.75rem; padding-left:.8rem !important; padding-right:.8rem !important;
+                font-size:.78rem !important;
+            }
+
+            header > div:last-child {
+                width:100%; display:grid !important; grid-template-columns:1fr 1fr 1fr;
+                gap:.4rem !important; overflow:visible !important; padding:0 !important;
+            }
+            header > div:last-child button {
+                width:100%; min-width:0; justify-content:center;
+                padding:.58rem .45rem !important; font-size:.68rem !important;
+            }
+            header > div:last-child button i { width:.95rem !important; height:.95rem !important; }
+            #labelsBtnText { font-size:0; }
+            #labelsBtnText::after { content:"Rótulos"; font-size:.68rem; }
+            #heatmapBtnText { font-size:0; }
+            #heatmapBtnText::after { content:"Calor"; font-size:.68rem; }
+            #uploadExcelBtn span { font-size:0; }
+            #uploadExcelBtn span::after { content:"Atualizar"; font-size:.68rem; }
+
+            #searchResultsPanel {
+                top:auto !important; left:.45rem !important; right:.45rem !important; bottom:.55rem !important;
+                width:auto !important; max-height:50dvh !important; border-radius:1rem !important;
+                z-index:45 !important;
+            }
+            #searchResultsPanel > div:first-child { padding:.85rem !important; }
+            #searchResultsList { padding:.55rem !important; }
+
+            #sideDrawer {
+                top:auto !important; left:.45rem !important; right:.45rem !important; bottom:.55rem !important;
+                width:auto !important; height:min(58dvh, 34rem); max-height:calc(100dvh - 10.5rem);
+                transform:translateY(calc(100% + 1rem)) !important;
+                border-radius:1rem !important; z-index:44 !important;
+            }
+            #sideDrawer.is-open, #sideDrawer.open { transform:translateY(0) !important; }
+            #sideDrawer > div:first-child { padding:.8rem !important; }
+            #sideDrawer > div:first-child .w-10.h-10 { width:2.35rem !important; height:2.35rem !important; }
+            #drawerTitle { font-size:1rem !important; }
+            #drawerSubtitle { font-size:.68rem !important; }
+            #sideDrawer > div:nth-child(2) { padding:.55rem .75rem !important; gap:.45rem !important; }
+            #sideDrawer > div:nth-child(2) > div { padding:.5rem .6rem !important; }
+            #sideDrawer > div:nth-child(2) span:first-child { font-size:.58rem !important; }
+            #drawerLocation, #drawerLevel { font-size:.73rem !important; }
+            .drawer-nav-v2 { padding:.48rem .6rem; gap:.35rem; }
+            .drawer-nav-v2 button { min-height:2rem; font-size:.64rem; padding:.25rem .35rem; }
+            #sideDrawer .flex-1.overflow-y-auto { padding:.65rem !important; }
+            .material-card { padding:.65rem; border-radius:.7rem; }
+            .material-code { font-size:.72rem; }
+            .material-qty { font-size:.68rem; }
+            .material-desc { font-size:.68rem; line-height:1.3; }
+            #sideDrawer > div:last-child { padding:.55rem .75rem !important; font-size:.62rem !important; }
+
+            body.drawer-open #viewbar, body.results-open #viewbar { display:none !important; }
             #tooltip { display:none !important; }
-            #toast-container { left:.75rem; right:.75rem; bottom:4.8rem; }
-            .toast { width:100%; }
+            #toast-container {
+                left:.55rem; right:.55rem; bottom:calc(.55rem + env(safe-area-inset-bottom));
+            }
+            .toast { width:100%; font-size:.75rem; padding:.7rem .8rem; }
         }
 
         /* V2 funcional com a identidade visual original */
@@ -985,6 +1061,9 @@
       $('prevPosBtn').disabled = !getAdjacentPosition(-1);
       $('nextPosBtn').disabled = !getAdjacentPosition(1);
       $('sideDrawer').classList.add('open');
+      $('sideDrawer').classList.add('is-open');
+      document.body.classList.add('drawer-open');
+      document.body.classList.remove('results-open');
     }
 
     function selectPosition(posKey, options = {}) {
@@ -1002,6 +1081,8 @@
     }
     function closeDrawer(clearSelection = true) {
       $('sideDrawer').classList.remove('open');
+      $('sideDrawer').classList.remove('is-open');
+      document.body.classList.remove('drawer-open');
       if (clearSelection) {
         selectedPositionKey = null;
         updateVisuals();
@@ -1016,6 +1097,7 @@
       if (positionDataMap[address]) {
         highlightedMaterialPositions = [];
         $('searchResultsPanel').classList.add('hidden');
+        document.body.classList.remove('results-open');
         selectPosition(address, { preserveHighlights: true });
         return;
       }
@@ -1038,6 +1120,21 @@
       }
 
       highlightedMaterialPositions = matches.map(m => m.position);
+
+      // Em uma única ocorrência, o resultado já é inequívoco: abre direto a posição.
+      if (matches.length === 1) {
+        $('searchResultsPanel').classList.add('hidden');
+        document.body.classList.remove('results-open');
+        selectedPositionKey = matches[0].position;
+        renderDrawer(matches[0].position);
+        updateVisuals();
+        focusPosition(matches[0].position);
+        showToast('Material localizado em 1 posição.', 'success');
+        return;
+      }
+
+      // Em várias ocorrências, mostra somente a lista; o drawer abre após o toque.
+      closeDrawer(false);
       const list = $('searchResultsList');
       list.innerHTML = '';
       matches.forEach(match => {
@@ -1045,22 +1142,26 @@
         const btn = document.createElement('button');
         btn.type = 'button'; btn.className = 'result-card';
         btn.innerHTML = `<div class="result-key">${escapeHtml(match.position)}</div><div class="result-desc">${escapeHtml(item.code || '')} • ${escapeHtml(item.desc || '')}</div><div class="result-meta">${match.items.length} ${match.items.length === 1 ? 'registro correspondente' : 'registros correspondentes'}</div>`;
-        btn.addEventListener('click', () => selectPosition(match.position, { preserveHighlights: true }));
+        btn.addEventListener('click', () => {
+          $('searchResultsPanel').classList.add('hidden');
+          document.body.classList.remove('results-open');
+          selectPosition(match.position, { preserveHighlights: true });
+        });
         list.appendChild(btn);
       });
-      $('searchResultsCount').textContent = `${matches.length} ${matches.length === 1 ? 'posição encontrada' : 'posições encontradas'}`;
+      $('searchResultsCount').textContent = `${matches.length} posições encontradas`;
       $('searchResultsPanel').classList.remove('hidden');
-      selectedPositionKey = matches[0].position;
-      renderDrawer(matches[0].position);
+      document.body.classList.add('results-open');
+      selectedPositionKey = null;
       updateVisuals();
-      focusPosition(matches[0].position);
-      showToast(`Material localizado em ${matches.length} ${matches.length === 1 ? 'posição' : 'posições'}.`, 'success');
+      showToast(`Material localizado em ${matches.length} posições. Escolha uma delas.`, 'success');
     }
 
     function clearSearch() {
       $('searchInput').value = '';
       $('clearSearchBtn').classList.add('hidden');
       $('searchResultsPanel').classList.add('hidden');
+      document.body.classList.remove('results-open');
       highlightedMaterialPositions = [];
       selectedPositionKey = null;
       closeDrawer(false);
@@ -1146,7 +1247,10 @@
       $('toggleLabelsBtn').addEventListener('click', cycleLabels);
       $('toggleHeatmapBtn').addEventListener('click', toggleHeatmap);
       $('closeDrawerBtn').addEventListener('click', () => closeDrawer(true));
-      $('closeResultsBtn').addEventListener('click', () => $('searchResultsPanel').classList.add('hidden'));
+      $('closeResultsBtn').addEventListener('click', () => {
+        $('searchResultsPanel').classList.add('hidden');
+        document.body.classList.remove('results-open');
+      });
       $('centerPosBtn').addEventListener('click', () => selectedPositionKey && focusPosition(selectedPositionKey));
       $('prevPosBtn').addEventListener('click', () => { const p = getAdjacentPosition(-1); if (p) selectPosition(p, { preserveHighlights: highlightedMaterialPositions.length > 0 }); });
       $('nextPosBtn').addEventListener('click', () => { const p = getAdjacentPosition(1); if (p) selectPosition(p, { preserveHighlights: highlightedMaterialPositions.length > 0 }); });
