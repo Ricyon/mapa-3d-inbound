@@ -256,7 +256,7 @@
             <div class="relative w-full">
                 <i data-lucide="search" class="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"></i>
                 <input id="searchInput" type="text" 
-                    placeholder="Pesquisar por Endereço (ex: ZC01) ou Material (ex: INCO168841)..." 
+                    placeholder="Pesquisar endereço, código, descrição ou termos (ex: linha 120 999)..." 
                     class="w-full bg-slate-900/80 text-sm text-slate-100 placeholder-slate-400 pl-10 pr-10 py-2.5 rounded-xl border border-slate-700/80 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all">
                 <button id="clearSearchBtn" class="hidden absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200">
                     <i data-lucide="x" class="w-4 h-4"></i>
@@ -551,11 +551,61 @@
       const d = new Date(iso);
       $('lastUpdateText').textContent = `Atualizado em ${d.toLocaleString('pt-BR')}`;
     }
+    function tokenizeSearch(value) {
+      return normalizeText(value)
+        .replace(/[^a-z0-9]+/g, ' ')
+        .split(/\s+/)
+        .filter(Boolean);
+    }
+
+    function searchScore(entry, rawQuery) {
+      const q = normalizeText(rawQuery);
+      const tokens = tokenizeSearch(rawQuery);
+      if (!tokens.length) return -1;
+
+      const code = entry.codeNorm;
+      const desc = entry.descNorm;
+      const haystack = entry.haystack;
+
+      // Todos os termos precisam aparecer, mas não precisam estar juntos nem na mesma ordem.
+      if (!tokens.every(token => haystack.includes(token))) return -1;
+
+      let score = 0;
+
+      // Prioriza código exato/início do código.
+      if (code === q) score += 1000;
+      else if (code.startsWith(q)) score += 700;
+      else if (code.includes(q)) score += 500;
+
+      // Frase exata na descrição recebe bônus, sem ser obrigatória.
+      if (desc.includes(q)) score += 300;
+
+      // Termos que aparecem como palavras completas recebem bônus.
+      const words = new Set(tokenizeSearch(desc));
+      tokens.forEach(token => {
+        if (words.has(token)) score += 45;
+        else if (desc.includes(token)) score += 20;
+        if (code.includes(token)) score += 35;
+      });
+
+      // Quanto menor a descrição, melhor o resultado tende a ser quando os termos são os mesmos.
+      score += Math.max(0, 120 - desc.length * 0.15);
+      return score;
+    }
+
     function rebuildSearchIndex() {
       searchIndex = [];
       Object.entries(inventoryDB).forEach(([position, items]) => {
         (items || []).forEach(item => {
-          searchIndex.push({ position, item, haystack: normalizeText(`${item.code} ${item.desc}`) });
+          const codeNorm = normalizeText(item.code);
+          const descNorm = normalizeText(item.desc);
+          searchIndex.push({
+            position,
+            item,
+            codeNorm,
+            descNorm,
+            haystack: `${codeNorm} ${descNorm}`.trim()
+          });
         });
       });
     }
@@ -1102,20 +1152,28 @@
         return;
       }
 
-      const q = normalizeText(raw);
+      const rankedEntries = searchIndex
+        .map(entry => ({ entry, score: searchScore(entry, raw) }))
+        .filter(result => result.score >= 0)
+        .sort((a, b) => b.score - a.score || a.entry.position.localeCompare(b.entry.position));
+
       const grouped = new Map();
-      searchIndex.forEach(entry => {
-        if (!entry.haystack.includes(q)) return;
-        if (!grouped.has(entry.position)) grouped.set(entry.position, []);
-        grouped.get(entry.position).push(entry.item);
+      rankedEntries.forEach(({ entry, score }) => {
+        if (!grouped.has(entry.position)) grouped.set(entry.position, { items: [], score });
+        const group = grouped.get(entry.position);
+        group.items.push(entry.item);
+        group.score = Math.max(group.score, score);
       });
-      const matches = [...grouped.entries()].map(([position, items]) => ({ position, items })).sort((a,b) => a.position.localeCompare(b.position));
+
+      const matches = [...grouped.entries()]
+        .map(([position, data]) => ({ position, items: data.items, score: data.score }))
+        .sort((a, b) => b.score - a.score || a.position.localeCompare(b.position));
       if (!matches.length) {
         highlightedMaterialPositions = [];
         selectedPositionKey = null;
         updateVisuals();
         $('searchResultsPanel').classList.add('hidden');
-        showToast(`Nenhum resultado para “${raw}”.`, 'error');
+        showToast(`Nenhum material contém todos os termos de “${raw}”.`, 'error');
         return;
       }
 
