@@ -1,0 +1,975 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mapa 3D Almoxarifado SLMB</title>
+    <!-- Bibliotecas entregues pelo próprio Worker para reduzir bloqueios e aproveitar cache da Cloudflare. -->
+    <script src="/vendor/tailwind.js"></script>
+    <script src="/vendor/lucide.js"></script>
+    <script src="/vendor/three.min.js"></script>
+    <script src="/vendor/OrbitControls.js"></script>
+    <script src="/vendor/xlsx.full.min.js"></script>
+
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #0f172a; font-family: 'Inter', system-ui, -apple-system, sans-serif; color: #f8fafc; }
+        #canvas-container { width: 100vw; height: 100vh; display: block; }
+        .glass { background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); }
+        .glass-card { background: rgba(30, 41, 59, 0.8); backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.08); }
+        
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.6); }
+        ::-webkit-scrollbar-thumb { background: rgba(51, 65, 85, 0.8); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(71, 85, 105, 1); }
+
+        #tooltip {
+            position: absolute;
+            display: none;
+            pointer-events: none;
+            z-index: 50;
+            transition: opacity 0.15s ease-out;
+        }
+
+        #toast-container {
+            position: fixed;
+            bottom: 1.5rem;
+            right: 1.5rem;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            pointer-events: none;
+        }
+        .toast {
+            background: rgba(30, 41, 59, 0.95);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: white;
+            padding: 1rem;
+            border-radius: 0.75rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            transform: translateX(120%);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .toast.show { transform: translateX(0); }
+
+        .sync-pill { display:inline-flex; align-items:center; gap:.35rem; }
+        .sync-dot { width:.45rem; height:.45rem; border-radius:999px; background:#94a3b8; box-shadow:0 0 0 3px rgba(148,163,184,.12); }
+        .sync-dot.online { background:#34d399; box-shadow:0 0 0 3px rgba(52,211,153,.12); }
+        .sync-dot.offline { background:#f59e0b; box-shadow:0 0 0 3px rgba(245,158,11,.12); }
+        #sideDrawer.is-open { transform: translateX(0) !important; }
+        @media (max-width: 768px) {
+            header { top:.5rem !important; left:.5rem !important; right:.5rem !important; padding:.75rem !important; gap:.65rem !important; }
+            header > div:first-child { width:100%; }
+            header h1 { font-size:.95rem !important; line-height:1.2; flex-wrap:wrap; }
+            header p { display:none; }
+            header .max-w-xl { max-width:none !important; width:100%; order:3; }
+            header > div:last-child { width:100%; overflow-x:auto; padding-bottom:.1rem; }
+            header > div:last-child button { flex:0 0 auto; }
+            #searchResultsPanel { top:12.25rem !important; left:.5rem !important; right:.5rem !important; width:auto !important; max-height:48vh !important; }
+            #sideDrawer { top:auto !important; left:.5rem !important; right:.5rem !important; bottom:.5rem !important; width:auto !important; max-height:60vh; transform:translateY(115%) !important; border-radius:1rem !important; }
+            #sideDrawer.is-open { transform:translateY(0) !important; }
+            #tooltip { display:none !important; }
+            #toast-container { left:.75rem; right:.75rem; bottom:4.8rem; }
+            .toast { width:100%; }
+        }
+    </style>
+</head>
+<body class="select-none">
+
+    <!-- 3D Canvas -->
+    <div id="canvas-container"></div>
+
+    <!-- Header / Top Navigation Bar -->
+    <header class="absolute top-4 left-4 right-4 glass rounded-2xl px-6 py-3.5 flex flex-wrap items-center justify-between z-20 gap-4 shadow-2xl">
+        <div class="flex items-center gap-3">
+            <div class="p-2.5 bg-amber-500/20 text-amber-400 rounded-xl border border-amber-500/30 flex items-center justify-center">
+                <i data-lucide="box" class="w-6 h-6"></i>
+            </div>
+            <div>
+                <h1 class="font-bold text-lg text-white tracking-wide flex items-center gap-2">
+                    Mapa 3D Almoxarifado SLMB
+                    <span class="text-xs font-normal px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">3D Ativo</span>
+                    <span id="syncBadge" class="sync-pill text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700" title="Status da base compartilhada">
+                        <span id="syncDot" class="sync-dot"></span><span id="syncText">Sincronizando…</span>
+                    </span>
+                </h1>
+                <p class="text-xs text-slate-400">Consulta de Endereços, Posições e Estoque SAP</p>
+            </div>
+        </div>
+
+        <!-- Search Bar -->
+        <div class="flex-1 max-w-xl mx-auto flex items-center gap-2">
+            <div class="relative w-full">
+                <i data-lucide="search" class="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                <input id="searchInput" type="text" 
+                    placeholder="Pesquisar por Endereço (ex: ZC01) ou Material (ex: INCO168841)..." 
+                    class="w-full bg-slate-900/80 text-sm text-slate-100 placeholder-slate-400 pl-10 pr-10 py-2.5 rounded-xl border border-slate-700/80 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all">
+                <button id="clearSearchBtn" class="hidden absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+            <button id="searchBtn" class="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-semibold text-sm rounded-xl transition-all shadow-lg shadow-amber-500/20 flex items-center gap-2">
+                <span>Buscar</span>
+            </button>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="flex items-center gap-2">
+            <button id="toggleLabelsBtn" class="px-3.5 py-2.5 glass-card hover:bg-slate-800 text-slate-200 text-xs font-medium rounded-xl transition-all flex items-center gap-2 border border-slate-700/60">
+                <i data-lucide="tag" class="w-4 h-4 text-cyan-400"></i>
+                <span id="labelsBtnText">Ocultar Rótulos</span>
+            </button>
+            <button id="toggleHeatmapBtn" class="px-3.5 py-2.5 glass-card hover:bg-slate-800 text-slate-200 text-xs font-medium rounded-xl transition-all flex items-center gap-2 border border-slate-700/60">
+                <i data-lucide="flame" class="w-4 h-4 text-amber-400"></i>
+                <span id="heatmapBtnText">Modo Calor</span>
+            </button>
+            <button id="uploadExcelBtn" class="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-xl transition-all shadow-lg shadow-emerald-600/20 flex items-center gap-2">
+                <i data-lucide="file-spreadsheet" class="w-4 h-4"></i>
+                <span>Atualizar Planilha</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Camera View Presets Bar -->
+    <div class="absolute bottom-6 left-1/2 -translate-x-1/2 glass rounded-2xl px-4 py-2.5 flex items-center gap-2 z-20 shadow-2xl overflow-x-auto max-w-[90vw]">
+        <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider px-2 border-r border-slate-700/60 mr-1 flex items-center gap-1.5">
+            <i data-lucide="compass" class="w-3.5 h-3.5 text-amber-400"></i> Visões
+        </span>
+        <button onclick="resetCameraView()" class="px-3 py-1.5 hover:bg-slate-800/80 text-slate-300 hover:text-white text-xs rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap">
+            <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i> Visão Geral
+        </button>
+        <div class="h-4 w-px bg-slate-700/60 mx-1"></div>
+        <button onclick="focusStreet('RUA1')" class="px-3 py-1.5 hover:bg-slate-800/80 text-slate-300 hover:text-white text-xs rounded-lg transition-all whitespace-nowrap">Rua 1 (C/D)</button>
+        <button onclick="focusStreet('RUA2')" class="px-3 py-1.5 hover:bg-slate-800/80 text-slate-300 hover:text-white text-xs rounded-lg transition-all whitespace-nowrap">Rua 2 (E/F)</button>
+        <button onclick="focusStreet('RUA3')" class="px-3 py-1.5 hover:bg-slate-800/80 text-slate-300 hover:text-white text-xs rounded-lg transition-all whitespace-nowrap">Rua 3 (G/H)</button>
+        <button onclick="focusStreet('RUA4')" class="px-3 py-1.5 hover:bg-slate-800/80 text-slate-300 hover:text-white text-xs rounded-lg transition-all whitespace-nowrap">Rua 4 (I)</button>
+        <button onclick="focusStreet('RUA5')" class="px-3 py-1.5 hover:bg-slate-800/80 text-slate-300 hover:text-white text-xs rounded-lg transition-all whitespace-nowrap">Rua 5 (J)</button>
+        <div class="h-4 w-px bg-slate-700/60 mx-1"></div>
+        <button onclick="focusTopView()" class="px-3 py-1.5 hover:bg-slate-800/80 text-slate-300 hover:text-white text-xs rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap">
+            <i data-lucide="layers" class="w-3.5 h-3.5 text-amber-400"></i> Topo (2D)
+        </button>
+    </div>
+
+    <!-- Stats Badge Floating -->
+    <div class="absolute bottom-6 left-6 glass rounded-2xl p-4 hidden md:flex flex-col gap-2 z-20 shadow-2xl border border-slate-700/60 min-w-[200px]">
+        <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+            <i data-lucide="bar-chart-3" class="w-3.5 h-3.5 text-amber-400"></i> Resumo do Estoque
+        </div>
+        <div id="lastUpdateText" class="text-[10px] text-slate-500">Última atualização: --</div>
+        <div class="grid grid-cols-2 gap-2 mt-1 text-xs">
+            <div class="bg-slate-900/60 p-2 rounded-xl border border-slate-800">
+                <span class="text-slate-400 block text-[10px]">Posições Totais</span>
+                <span id="statTotalPositions" class="text-sm font-bold text-slate-100">--</span>
+            </div>
+            <div class="bg-slate-900/60 p-2 rounded-xl border border-slate-800">
+                <span class="text-slate-400 block text-[10px]">Ocupadas</span>
+                <span id="statOccupiedPositions" class="text-sm font-bold text-amber-400">--</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Side Panel Drawer -->
+    <aside id="sideDrawer" class="absolute top-24 bottom-6 right-6 w-96 glass rounded-2xl shadow-2xl z-20 flex flex-col transform translate-x-[115%] transition-transform duration-300 ease-out border border-slate-700/80 overflow-hidden">
+        <div class="p-5 border-b border-slate-700/80 flex items-center justify-between bg-slate-900/60">
+            <div class="flex items-center gap-3">
+                <div id="drawerBadge" class="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center font-bold text-base">
+                    --
+                </div>
+                <div>
+                    <h2 id="drawerTitle" class="font-bold text-slate-100 text-lg leading-tight">Posição --</h2>
+                    <p id="drawerSubtitle" class="text-xs text-slate-400">Endereço do Almoxarifado SLMB</p>
+                </div>
+            </div>
+            <button id="closeDrawerBtn" class="p-2 hover:bg-slate-800 rounded-xl text-slate-400 hover:text-white transition-all">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+
+        <div class="p-4 bg-slate-900/40 border-b border-slate-800 flex items-center justify-between gap-2 text-xs">
+            <div class="flex-1 bg-slate-800/60 p-2.5 rounded-xl border border-slate-700/50">
+                <span class="text-slate-400 block text-[10px] uppercase">Localização</span>
+                <span id="drawerLocation" class="font-semibold text-slate-200">Rua -- | Coluna --</span>
+            </div>
+            <div class="flex-1 bg-slate-800/60 p-2.5 rounded-xl border border-slate-700/50">
+                <span class="text-slate-400 block text-[10px] uppercase">Nível</span>
+                <span id="drawerLevel" class="font-semibold text-slate-200">Nível --</span>
+            </div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-4 space-y-3">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <i data-lucide="list" class="w-3.5 h-3.5 text-amber-400"></i> Materiais Alocados
+                </span>
+                <span id="drawerMaterialCount" class="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-mono">0 itens</span>
+            </div>
+
+            <div id="drawerItemList" class="space-y-2">
+                <!-- Dynamic Item Cards -->
+            </div>
+        </div>
+
+        <div class="p-4 bg-slate-900/80 border-t border-slate-800 text-xs flex items-center justify-between text-slate-400">
+            <span>Status: <strong id="drawerStatusText" class="text-emerald-400">Ativo</strong></span>
+        </div>
+    </aside>
+
+    <!-- Search Results Panel -->
+    <div id="searchResultsPanel" class="absolute top-24 left-6 w-80 glass rounded-2xl shadow-2xl z-20 flex flex-col hidden border border-slate-700/80 overflow-hidden max-h-[75vh]">
+        <div class="p-4 border-b border-slate-700/80 bg-slate-900/60 flex items-center justify-between">
+            <div>
+                <h3 class="font-bold text-sm text-slate-100 flex items-center gap-2">
+                    <i data-lucide="layers" class="w-4 h-4 text-amber-400"></i>
+                    Resultados da Busca
+                </h3>
+                <p id="searchResultsCount" class="text-xs text-slate-400">0 posições encontradas</p>
+            </div>
+            <button id="closeResultsBtn" class="p-1 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white">
+                <i data-lucide="x" class="w-4 h-4"></i>
+            </button>
+        </div>
+        <div id="searchResultsList" class="p-3 overflow-y-auto space-y-2 flex-1">
+            <!-- Position Result Cards -->
+        </div>
+    </div>
+
+    <!-- 3D Hover Tooltip -->
+    <div id="tooltip" class="glass-card rounded-xl p-3 shadow-2xl border border-amber-500/30 text-xs min-w-[160px]">
+        <div class="flex items-center justify-between gap-2 border-b border-slate-700/60 pb-1.5 mb-1.5">
+            <span id="ttPosName" class="font-bold text-amber-400 text-sm">ZC01</span>
+            <span id="ttStatus" class="px-1.5 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-400 font-semibold">Ocupado</span>
+        </div>
+        <div class="space-y-1 text-slate-300 text-[11px]">
+            <p><span class="text-slate-400">Corredor:</span> <strong id="ttCorredor" class="text-slate-200">--</strong></p>
+            <p><span class="text-slate-400">Materiais:</span> <strong id="ttItemCount" class="text-slate-200">0</strong></p>
+        </div>
+    </div>
+
+    <!-- Excel Upload Modal -->
+    <div id="uploadModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="glass rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-700 relative">
+            <button id="closeModalBtn" class="absolute top-4 right-4 text-slate-400 hover:text-white">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+            <div class="flex items-center gap-3 mb-4">
+                <div class="p-3 bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/30">
+                    <i data-lucide="file-spreadsheet" class="w-6 h-6"></i>
+                </div>
+                <div>
+                    <h3 class="font-bold text-lg text-white">Atualizar Dados</h3>
+                    <p class="text-xs text-slate-400">Importe a planilha ZMM023 (.xlsx)</p>
+                </div>
+            </div>
+            
+            <div class="mb-4">
+                <label for="adminKeyInput" class="block text-xs font-semibold text-slate-300 mb-1.5">Chave de atualização</label>
+                <input id="adminKeyInput" type="password" autocomplete="current-password" placeholder="Digite a chave para publicar a nova base"
+                    class="w-full bg-slate-900/80 text-sm text-slate-100 placeholder-slate-500 px-3.5 py-2.5 rounded-xl border border-slate-700 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
+                <p class="text-[10px] text-slate-500 mt-1.5">A chave só é usada nesta atualização e não fica salva permanentemente.</p>
+            </div>
+
+            <div id="dropZone" class="border-2 border-dashed border-slate-700 hover:border-emerald-500 rounded-xl p-8 text-center cursor-pointer transition-all bg-slate-900/40 hover:bg-slate-900/80">
+                <i data-lucide="upload-cloud" class="w-10 h-10 text-slate-400 mx-auto mb-2"></i>
+                <p class="text-sm font-medium text-slate-200">Arraste a planilha aqui</p>
+                <p class="text-xs text-slate-400 mt-1">ou clique para procurar</p>
+                <input type="file" id="excelFileInput" accept=".xlsx, .xls, .csv" class="hidden">
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Toast Container -->
+    <div id="toast-container"></div>
+
+    <script>
+        lucide.createIcons();
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            
+            let icon = '<i data-lucide="info" class="w-5 h-5 text-cyan-400"></i>';
+            if(type === 'error') icon = '<i data-lucide="alert-circle" class="w-5 h-5 text-red-400"></i>';
+            if(type === 'success') icon = '<i data-lucide="check-circle" class="w-5 h-5 text-emerald-400"></i>';
+
+            toast.innerHTML = `${icon}<span class="text-sm font-medium">${message}</span>`;
+            container.appendChild(toast);
+            lucide.createIcons();
+
+            setTimeout(() => toast.classList.add('show'), 10);
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 300);
+            }, 4000);
+        }
+
+        // Global State
+        let inventoryDB = {};
+        let heatmapMode = false;
+        let labelsVisible = true;
+        let selectedPositionKey = null;
+        let highlightedMaterialPositions = [];
+
+        // 3D Engine Variables
+        let scene, camera, renderer, controls;
+        let rackMeshMap = {}; 
+        let positionDataMap = {}; 
+        let labelSprites = []; 
+        let raycaster = new THREE.Raycaster();
+        let mouse = new THREE.Vector2();
+
+        // Visual Constants
+        const COL_WIDTH = 2.4;
+        const LEVEL_HEIGHT = 1.35;
+        const RACK_DEPTH = 1.1;
+
+        const CORRIDOR_CONFIGS = {
+            'ZC': { street: 'RUA1', name: 'Corredor C', z: -20.0, faceDir: 1,  cols: 9, maxNum: 45 },
+            'ZD': { street: 'RUA1', name: 'Corredor D', z: -14.5, faceDir: -1, cols: 9, maxNum: 45 },
+            'ZE': { street: 'RUA2', name: 'Corredor E', z: -13.0, faceDir: 1,  cols: 9, maxNum: 45 },
+            'ZF': { street: 'RUA2', name: 'Corredor F', z: -7.5,  faceDir: -1, cols: 9, maxNum: 45 },
+            'ZG': { street: 'RUA3', name: 'Corredor G', z: -6.0,  faceDir: 1,  cols: 9, maxNum: 45 },
+            'ZH': { street: 'RUA3', name: 'Corredor H', z: -0.5,  faceDir: -1, cols: 9, maxNum: 45 },
+            'ZI': { street: 'RUA4', name: 'Corredor I', z: 1.0,   faceDir: 1,  cols: 9, maxNum: 45 },
+            'ZJ': { street: 'RUA5', name: 'Corredor J', z: 6.5,   faceDir: 1,  cols: 5, maxNum: 25 }
+        };
+
+        const DISABLED_POSITIONS = new Set([
+            'ZD11', 'ZD12',
+            ...Array.from({length: 15}, (_, i) => `ZF${i + 31}`),
+            ...Array.from({length: 15}, (_, i) => `ZG${i + 31}`)
+        ]);
+
+        function normalizeKey(key) {
+            if (!key) return '';
+            let k = String(key).trim().toUpperCase();
+            k = k.replace(/^0+/, ''); // Remove zeros à esquerda
+            let match = k.match(/^(Z)?([C-J])0*(\d+)$/);
+            if (match) {
+                let letter = match[2];
+                let num = parseInt(match[3], 10);
+                return `Z${letter}${num < 10 ? '0' + num : num}`;
+            }
+            return k;
+        }
+
+        function createTextSprite(text) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+            ctx.beginPath();
+            ctx.roundRect(10, 10, 236, 108, 20);
+            ctx.fill();
+
+            ctx.strokeStyle = '#f59e0b';
+            ctx.lineWidth = 6;
+            ctx.stroke();
+
+            ctx.font = 'bold 52px Inter, sans-serif';
+            ctx.fillStyle = '#f8fafc';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, 128, 64);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            const material = new THREE.SpriteMaterial({ map: texture, depthTest: false });
+            const sprite = new THREE.Sprite(material);
+            sprite.scale.set(1.5, 0.75, 1);
+            return sprite;
+        }
+
+        const CACHE_KEY = 'inbound-map-cache-v1';
+        let currentVersion = null;
+        let currentLastUpdated = null;
+
+        function updateSyncUI(status, text) {
+            const dot = document.getElementById('syncDot');
+            const label = document.getElementById('syncText');
+            dot.classList.remove('online', 'offline');
+            if (status === 'online') dot.classList.add('online');
+            if (status === 'offline') dot.classList.add('offline');
+            label.innerText = text;
+        }
+
+        function updateLastUpdateUI(iso) {
+            const el = document.getElementById('lastUpdateText');
+            if (!iso) { el.innerText = 'Última atualização: base ainda não publicada'; return; }
+            const d = new Date(iso);
+            el.innerText = `Última atualização: ${d.toLocaleString('pt-BR')}`;
+        }
+
+        function loadCachedInventory() {
+            try {
+                const cached = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
+                if (!cached || !cached.inventory) return false;
+                inventoryDB = cached.inventory;
+                currentVersion = cached.version || null;
+                currentLastUpdated = cached.lastUpdated || null;
+                updateWarehouseBoxes();
+                updateLastUpdateUI(currentLastUpdated);
+                updateSyncUI('offline', 'Cache local');
+                return true;
+            } catch { return false; }
+        }
+
+        function saveCache(payload) {
+            try {
+                localStorage.setItem(CACHE_KEY, JSON.stringify({
+                    version: payload.version,
+                    lastUpdated: payload.lastUpdated,
+                    inventory: payload.inventory
+                }));
+            } catch {}
+        }
+
+        async function syncInventory(force = false) {
+            updateSyncUI('', 'Sincronizando…');
+            try {
+                const headers = {};
+                if (!force && currentVersion) headers['If-None-Match'] = `W/"${currentVersion}"`;
+                const response = await fetch('/api/inventory', { headers, cache: 'no-store' });
+                if (response.status === 304) {
+                    updateSyncUI('online', 'Sincronizado');
+                    updateLastUpdateUI(currentLastUpdated);
+                    return;
+                }
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const payload = await response.json();
+                inventoryDB = payload.inventory || {};
+                currentVersion = payload.version || null;
+                currentLastUpdated = payload.lastUpdated || null;
+                saveCache(payload);
+                updateWarehouseBoxes();
+                updateLastUpdateUI(currentLastUpdated);
+                updateSyncUI('online', 'Sincronizado');
+            } catch (error) {
+                updateSyncUI('offline', 'Offline / cache');
+                showToast('Não foi possível atualizar a base online. Usando a última cópia disponível.', 'error');
+            }
+        }
+
+        async function initApp() {
+            initThreeJS();
+            generateWarehouseLayout();
+            setupEventListeners();
+            animate();
+            loadCachedInventory();
+            updateStatsUI();
+            await syncInventory();
+        }
+
+        function initThreeJS() {
+            const container = document.getElementById('canvas-container');
+            
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0f172a);
+            scene.fog = new THREE.FogExp2(0x0f172a, 0.012);
+
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(22, 18, 32);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, window.innerWidth < 768 ? 1.25 : 1.75));
+            renderer.shadowMap.enabled = true;
+            container.appendChild(renderer.domElement);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.maxPolarAngle = Math.PI / 2 - 0.02; 
+            controls.target.set(0, 3, -2);
+
+            scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(30, 40, 20);
+            dirLight.castShadow = true;
+            scene.add(dirLight);
+
+            const floor = new THREE.Mesh(
+                new THREE.PlaneGeometry(120, 120),
+                new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.8 })
+            );
+            floor.rotation.x = -Math.PI / 2;
+            floor.receiveShadow = true;
+            scene.add(floor);
+
+            const grid = new THREE.GridHelper(120, 60, 0x334155, 0x1e293b);
+            grid.position.y = 0.01;
+            scene.add(grid);
+
+            createSafetyLines();
+        }
+
+        function createSafetyLines() {
+            const lineMat = new THREE.MeshBasicMaterial({ color: 0xeab308, opacity: 0.6, transparent: true });
+            const streetCenters = [-17.25, -10.25, -3.25, 3.75];
+
+            streetCenters.forEach(zPos => {
+                const s1 = new THREE.Mesh(new THREE.PlaneGeometry(28, 0.15), lineMat);
+                s1.rotation.x = -Math.PI / 2; s1.position.set(0, 0.02, zPos - 1.5);
+                scene.add(s1);
+                
+                const s2 = s1.clone(); s2.position.z = zPos + 1.5;
+                scene.add(s2);
+            });
+        }
+
+        function generateWarehouseLayout() {
+            const frameMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.5, metalness: 0.7 });
+            const bootMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.3 });
+            const disabledMat = new THREE.MeshStandardMaterial({ color: 0x475569, transparent: true, opacity: 0.2 });
+
+            Object.keys(CORRIDOR_CONFIGS).forEach(corrCode => {
+                const cfg = CORRIDOR_CONFIGS[corrCode];
+                const xOffset = - ((cfg.cols * COL_WIDTH) / 2) + (COL_WIDTH / 2);
+
+                for (let num = 1; num <= cfg.maxNum; num++) {
+                    const posKey = `${corrCode}${num < 10 ? '0' + num : num}`;
+                    const colIndex = Math.floor((num - 1) / 5);
+                    const levelIndex = ((num - 1) % 5) + 1;
+
+                    const posX = xOffset + (colIndex * COL_WIDTH);
+                    const posY = (levelIndex - 0.5) * LEVEL_HEIGHT + 0.2;
+                    const posZ = cfg.z;
+                    const isDisabled = DISABLED_POSITIONS.has(posKey);
+
+                    positionDataMap[posKey] = { key: posKey, corridor: cfg.name, street: cfg.street, col: colIndex+1, lvl: levelIndex, disabled: isDisabled, x: posX, y: posY, z: posZ };
+
+                    let slotGroup = new THREE.Group();
+                    slotGroup.position.set(posX, posY, posZ);
+
+                    if (isDisabled) {
+                        slotGroup.add(new THREE.Mesh(new THREE.BoxGeometry(COL_WIDTH*0.8, LEVEL_HEIGHT*0.8, RACK_DEPTH*0.8), disabledMat));
+                    } else {
+                        const items = inventoryDB[posKey] || [];
+                        if (items.length > 0) {
+                            const boxGroup = buildBoxMesh(items.length);
+                            boxGroup.userData = { isBoxGroup: true };
+                            slotGroup.add(boxGroup);
+                        }
+
+                        const sprite = createTextSprite(posKey);
+                        sprite.position.set(0, -0.2, (RACK_DEPTH / 2 + 0.3) * cfg.faceDir);
+                        sprite.visible = labelsVisible;
+                        labelSprites.push(sprite);
+                        slotGroup.add(sprite);
+                    }
+
+                    const hitBox = new THREE.Mesh(new THREE.BoxGeometry(COL_WIDTH*0.9, LEVEL_HEIGHT*0.9, RACK_DEPTH*0.9), new THREE.MeshBasicMaterial({visible: false}));
+                    hitBox.userData = { positionKey: posKey };
+                    slotGroup.add(hitBox);
+                    
+                    scene.add(slotGroup);
+                    rackMeshMap[posKey] = slotGroup;
+                }
+                
+                createFrames(cfg, xOffset, frameMat, bootMat);
+            });
+        }
+
+        function buildBoxMesh(itemCount) {
+            const group = new THREE.Group();
+            
+            const pallet = new THREE.Mesh(new THREE.BoxGeometry(COL_WIDTH*0.85, 0.12, RACK_DEPTH*0.85), new THREE.MeshStandardMaterial({color: 0x78350f, roughness: 0.9}));
+            pallet.position.y = -LEVEL_HEIGHT * 0.38;
+            group.add(pallet);
+
+            const boxMat = new THREE.MeshStandardMaterial({color: 0xd97706, roughness: 0.8});
+            const height = Math.min(0.65, 0.2 + (itemCount * 0.1));
+            const box = new THREE.Mesh(new THREE.BoxGeometry(COL_WIDTH*0.75, LEVEL_HEIGHT*height, RACK_DEPTH*0.75), boxMat);
+            box.position.y = (LEVEL_HEIGHT*height)/2 - LEVEL_HEIGHT * 0.32;
+            
+            const sticker = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.2), new THREE.MeshBasicMaterial({color: 0xffffff}));
+            sticker.position.set(0, 0, (RACK_DEPTH*0.75)/2 + 0.01);
+            box.add(sticker);
+            
+            box.userData.isBox = true; 
+            group.add(box);
+
+            return group;
+        }
+
+        function createFrames(cfg, xOffset, frameMat, bootMat) {
+            const rackHeight = 5 * LEVEL_HEIGHT + 0.4;
+            const postGeo = new THREE.BoxGeometry(0.08, rackHeight, 0.08);
+            for (let c = 0; c <= cfg.cols; c++) {
+                const px = xOffset - (COL_WIDTH / 2) + (c * COL_WIDTH);
+                [-RACK_DEPTH/2, RACK_DEPTH/2].forEach(zOffset => {
+                    const post = new THREE.Mesh(postGeo, frameMat);
+                    post.position.set(px, rackHeight / 2, cfg.z + zOffset);
+                    scene.add(post);
+
+                    const boot = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.4, 0.16), bootMat);
+                    boot.position.set(px, 0.2, cfg.z + zOffset);
+                    scene.add(boot);
+                });
+            }
+        }
+
+        function setupEventListeners() {
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+
+            const updatePointer = (e) => {
+                mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+            };
+
+            window.addEventListener('pointermove', (e) => {
+                updatePointer(e);
+                raycaster.setFromCamera(mouse, camera);
+                const intersects = raycaster.intersectObjects(scene.children, true);
+
+                let foundKey = null;
+                for (let int of intersects) {
+                    if (int.object.userData.positionKey) {
+                        foundKey = int.object.userData.positionKey; break;
+                    }
+                }
+
+                const tt = document.getElementById('tooltip');
+                if (foundKey) {
+                    const info = positionDataMap[foundKey];
+                    const items = inventoryDB[foundKey] || [];
+                    document.getElementById('ttPosName').innerText = foundKey;
+                    document.getElementById('ttCorredor').innerText = `${info.corridor}`;
+                    document.getElementById('ttItemCount').innerText = `${items.length} itens`;
+                    
+                    tt.style.display = 'block';
+                    tt.style.left = (e.clientX + 15) + 'px';
+                    tt.style.top = (e.clientY + 15) + 'px';
+                    document.body.style.cursor = 'pointer';
+                } else {
+                    tt.style.display = 'none';
+                    document.body.style.cursor = 'default';
+                }
+            });
+
+            window.addEventListener('click', (e) => {
+                if (e.target.closest('header, aside, #searchResultsPanel, .glass')) return;
+                updatePointer(e);
+                raycaster.setFromCamera(mouse, camera);
+                const intersects = raycaster.intersectObjects(scene.children, true);
+                for (let int of intersects) {
+                    if (int.object.userData.positionKey) {
+                        selectPosition(int.object.userData.positionKey);
+                        break;
+                    }
+                }
+            });
+
+            document.getElementById('searchBtn').addEventListener('click', performSearch);
+            document.getElementById('searchInput').addEventListener('keyup', (e) => { if (e.key === 'Enter') performSearch(); });
+            document.getElementById('clearSearchBtn').addEventListener('click', clearSearch);
+            document.getElementById('closeDrawerBtn').addEventListener('click', () => document.getElementById('sideDrawer').classList.remove('is-open'));
+            document.getElementById('closeResultsBtn').addEventListener('click', () => document.getElementById('searchResultsPanel').classList.add('hidden'));
+            
+            document.getElementById('toggleHeatmapBtn').addEventListener('click', toggleHeatmap);
+            document.getElementById('toggleLabelsBtn').addEventListener('click', toggleLabels);
+            
+            document.getElementById('uploadExcelBtn').addEventListener('click', () => document.getElementById('uploadModal').classList.remove('hidden'));
+            document.getElementById('closeModalBtn').addEventListener('click', () => document.getElementById('uploadModal').classList.add('hidden'));
+
+            const dropZone = document.getElementById('dropZone');
+            const fileInput = document.getElementById('excelFileInput');
+
+            dropZone.addEventListener('click', () => fileInput.click());
+            dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('border-emerald-500'); });
+            dropZone.addEventListener('dragleave', () => dropZone.classList.remove('border-emerald-500'));
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('border-emerald-500');
+                if (e.dataTransfer.files.length) handleExcelFile(e.dataTransfer.files[0]);
+            });
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files.length) handleExcelFile(e.target.files[0]);
+            });
+        }
+
+        // Função para recriar as caixas 3D nos porta-paletes do mapa
+        function updateWarehouseBoxes() {
+            Object.keys(positionDataMap).forEach(posKey => {
+                const info = positionDataMap[posKey];
+                if (info.disabled) return;
+
+                const slotGroup = rackMeshMap[posKey];
+                if (!slotGroup) return;
+
+                let existingBoxGroup = null;
+                slotGroup.children.forEach(child => {
+                    if (child.userData && child.userData.isBoxGroup) {
+                        existingBoxGroup = child;
+                    }
+                });
+
+                if (existingBoxGroup) {
+                    slotGroup.remove(existingBoxGroup);
+                }
+
+                const items = inventoryDB[posKey] || [];
+                if (items.length > 0) {
+                    const newBoxGroup = buildBoxMesh(items.length);
+                    newBoxGroup.userData = { isBoxGroup: true };
+                    slotGroup.add(newBoxGroup);
+                }
+            });
+
+            updateStatsUI();
+            resetColors();
+        }
+
+        function handleExcelFile(file) {
+            const adminKey = document.getElementById('adminKeyInput').value.trim();
+            if (!adminKey) {
+                showToast('Digite a chave de atualização antes de importar.', 'error');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    const jsonRows = XLSX.utils.sheet_to_json(worksheet);
+
+                    const newDB = {};
+                    let importedCount = 0;
+
+                    jsonRows.forEach(row => {
+                        let rawPos = null;
+                        const posColNames = ['Posição', 'Posicao', 'POSICAO', 'Posição SAP', 'Endereço', 'Endereco', 'Pos. depósito', 'Pos.depósito', 'BIN', 'Storage Bin'];
+                        for (let pName of posColNames) {
+                            if (row[pName] !== undefined && row[pName] !== null && String(row[pName]).trim() !== '') {
+                                rawPos = row[pName];
+                                break;
+                            }
+                        }
+
+                        if (!rawPos) {
+                            for (let key in row) {
+                                let kClean = key.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                                if ((kClean.includes('posic') || kClean.includes('enderec') || kClean.includes('bin') || kClean.includes('localiz'))
+                                    && !kClean.includes('deposito') && !kClean.includes('centro') && !kClean.includes('tipo') && !kClean.includes('status')) {
+                                    rawPos = row[key];
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (!rawPos) return;
+                        const normPos = normalizeKey(rawPos);
+                        if (!normPos || !positionDataMap[normPos] || positionDataMap[normPos].disabled) return;
+                        if (!newDB[normPos]) newDB[normPos] = [];
+
+                        const code = row['Material'] || row['Código'] || row['Codigo'] || row['Cod'] || '';
+                        const desc = row['Descrição'] || row['Descricao'] || row['DESC'] || row['Material Desc'] || '';
+                        const qtyRaw = row['Qtde total'] ?? row['Qtde'] ?? row['Quantidade'] ?? row['Qtd'] ?? row['QTDE'] ?? 0;
+                        const qtyParsed = Number(String(qtyRaw).replace(',', '.'));
+                        const qty = Number.isFinite(qtyParsed) ? Math.abs(qtyParsed) : 0;
+
+                        if (!String(code).trim() && !String(desc).trim()) return;
+                        newDB[normPos].push({ code: String(code).trim(), desc: String(desc).trim(), qty });
+                        importedCount++;
+                    });
+
+                    if (!importedCount) throw new Error('Nenhum registro válido foi encontrado para as posições do mapa.');
+                    showToast(`Validado: ${importedCount} registros. Salvando para todos…`, 'info');
+
+                    const response = await fetch('/api/import', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'X-Admin-Key': adminKey },
+                        body: JSON.stringify({ filename: file.name, inventory: newDB })
+                    });
+                    const result = await response.json().catch(() => ({}));
+                    if (!response.ok || !result.ok) throw new Error(result.error || `Falha HTTP ${response.status}`);
+
+                    inventoryDB = newDB;
+                    currentVersion = result.version;
+                    currentLastUpdated = result.lastUpdated;
+                    saveCache({ version: currentVersion, lastUpdated: currentLastUpdated, inventory: inventoryDB });
+                    updateWarehouseBoxes();
+                    updateLastUpdateUI(currentLastUpdated);
+                    updateSyncUI('online', 'Sincronizado');
+                    document.getElementById('uploadModal').classList.add('hidden');
+                    document.getElementById('excelFileInput').value = '';
+                    document.getElementById('adminKeyInput').value = '';
+                    showToast(`Base publicada! ${importedCount} registros em ${Object.keys(newDB).length} posições.`, 'success');
+                } catch (error) {
+                    showToast(error.message || 'Falha ao importar a planilha.', 'error');
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function selectPosition(posKey) {
+            const info = positionDataMap[posKey];
+            if (!info) return;
+
+            selectedPositionKey = posKey;
+            
+            const tx = info.x + (info.x > 0 ? 4 : -4);
+            gsapAnimateCamera({ x: tx, y: info.y + 2, z: info.z + 5 }, { x: info.x, y: info.y, z: info.z });
+            
+            const items = inventoryDB[posKey] || [];
+            document.getElementById('drawerBadge').innerText = posKey.substring(0, 2);
+            document.getElementById('drawerTitle').innerText = posKey;
+            document.getElementById('drawerSubtitle').innerText = info.corridor;
+            document.getElementById('drawerLocation').innerText = `${info.street} | Col ${info.col}`;
+            document.getElementById('drawerLevel').innerText = `Nível ${info.lvl}`;
+            document.getElementById('drawerMaterialCount').innerText = `${items.length} materiais`;
+
+            const list = document.getElementById('drawerItemList');
+            list.innerHTML = items.length ? items.map(i => `
+                <div class="p-3 bg-slate-900/80 rounded-xl border border-slate-700/60 text-xs">
+                    <div class="flex justify-between font-bold text-amber-400"><span>${i.code}</span><span class="text-emerald-400">${i.qty} UN</span></div>
+                    <p class="text-slate-300 truncate">${i.desc}</p>
+                </div>`).join('') : '<p class="text-xs text-slate-500 p-4 text-center">Posição Vazia</p>';
+
+            document.getElementById('sideDrawer').classList.add('is-open');
+            resetColors();
+        }
+
+        function performSearch() {
+            const query = document.getElementById('searchInput').value.trim();
+            if (!query) return;
+            document.getElementById('clearSearchBtn').classList.remove('hidden');
+
+            const normKey = normalizeKey(query);
+            if (positionDataMap[normKey]) {
+                document.getElementById('searchResultsPanel').classList.add('hidden');
+                selectPosition(normKey);
+                return;
+            }
+
+            const q = query.toLowerCase();
+            const matches = [];
+            Object.keys(inventoryDB).forEach(pk => {
+                const items = inventoryDB[pk];
+                const found = items.filter(it => it.code.toLowerCase().includes(q) || it.desc.toLowerCase().includes(q));
+                if (found.length) matches.push({ posKey: pk, items: found });
+            });
+
+            if (matches.length) {
+                highlightedMaterialPositions = matches.map(m => m.posKey);
+                selectPosition(matches[0].posKey);
+                
+                const list = document.getElementById('searchResultsList');
+                list.innerHTML = matches.map(m => `
+                    <div onclick="selectPosition('${m.posKey}')" class="p-2 bg-slate-800 rounded-lg border border-slate-700 cursor-pointer hover:border-amber-500 mb-1 text-xs">
+                        <span class="font-bold text-amber-400 block">${m.posKey}</span>
+                        <span class="text-slate-300 truncate block">${m.items[0].desc}</span>
+                    </div>`).join('');
+                document.getElementById('searchResultsCount').innerText = `${matches.length} posições`;
+                document.getElementById('searchResultsPanel').classList.remove('hidden');
+                showToast(`Encontrado em ${matches.length} posições.`, 'success');
+            } else {
+                showToast(`Nenhum resultado para "${query}"`, 'error');
+            }
+            resetColors();
+        }
+
+        function clearSearch() {
+            document.getElementById('searchInput').value = '';
+            document.getElementById('clearSearchBtn').classList.add('hidden');
+            document.getElementById('searchResultsPanel').classList.add('hidden');
+            highlightedMaterialPositions = [];
+            selectedPositionKey = null;
+            resetColors();
+            showToast('Busca limpa.', 'info');
+        }
+
+        function resetColors() {
+            Object.keys(rackMeshMap).forEach(key => {
+                if (positionDataMap[key].disabled) return;
+                
+                const group = rackMeshMap[key];
+                const isSelected = selectedPositionKey === key;
+                const isHighlighted = highlightedMaterialPositions.includes(key);
+                const count = (inventoryDB[key] || []).length;
+
+                group.traverse((child) => {
+                    if (child.userData.isBox && child.material) {
+                        if (isSelected) child.material.color.setHex(0x00f0ff);
+                        else if (isHighlighted) child.material.color.setHex(0xf59e0b);
+                        else if (heatmapMode) {
+                            if (count < 2) child.material.color.setHex(0x10b981);
+                            else if (count < 4) child.material.color.setHex(0xf59e0b);
+                            else child.material.color.setHex(0xef4444);
+                        }
+                        else child.material.color.setHex(0xd97706);
+                    }
+                });
+            });
+        }
+
+        function toggleHeatmap() {
+            heatmapMode = !heatmapMode;
+            document.getElementById('heatmapBtnText').innerText = heatmapMode ? 'Normal' : 'Modo Calor';
+            resetColors();
+            showToast(heatmapMode ? 'Modo de densidade (Calor) ativado.' : 'Visualização normal restaurada.');
+        }
+
+        function toggleLabels() {
+            labelsVisible = !labelsVisible;
+            document.getElementById('labelsBtnText').innerText = labelsVisible ? 'Ocultar Rótulos' : 'Mostrar Rótulos';
+            labelSprites.forEach(s => s.visible = labelsVisible);
+            showToast(labelsVisible ? 'Rótulos visíveis.' : 'Rótulos ocultos.');
+        }
+
+        function gsapAnimateCamera(tPos, tLook) {
+            const sPos = { x: camera.position.x, y: camera.position.y, z: camera.position.z };
+            const sLook = { x: controls.target.x, y: controls.target.y, z: controls.target.z };
+            let p = 0;
+            function step() {
+                p += 0.05;
+                if (p <= 1) {
+                    camera.position.set(sPos.x + (tPos.x - sPos.x)*p, sPos.y + (tPos.y - sPos.y)*p, sPos.z + (tPos.z - sPos.z)*p);
+                    controls.target.set(sLook.x + (tLook.x - sLook.x)*p, sLook.y + (tLook.y - sLook.y)*p, sLook.z + (tLook.z - sLook.z)*p);
+                    requestAnimationFrame(step);
+                }
+            }
+            step();
+        }
+
+        function resetCameraView() { gsapAnimateCamera({ x: 22, y: 18, z: 32 }, { x: 0, y: 3, z: -2 }); }
+        function focusStreet(s) {
+            const t = {
+                'RUA1': { pos: { x: 0, y: 8, z: -17.25 + 10 }, look: { x: 0, y: 3, z: -17.25 } },
+                'RUA2': { pos: { x: 0, y: 8, z: -10.25 + 10 }, look: { x: 0, y: 3, z: -10.25 } },
+                'RUA3': { pos: { x: 0, y: 8, z: -3.25 + 10 }, look: { x: 0, y: 3, z: -3.25 } },
+                'RUA4': { pos: { x: 0, y: 8, z: 3.75 + 10 }, look: { x: 0, y: 3, z: 3.75 } },
+                'RUA5': { pos: { x: 0, y: 8, z: 6.5 + 10 }, look: { x: 0, y: 3, z: 6.5 } }
+            };
+            if(t[s]) gsapAnimateCamera(t[s].pos, t[s].look);
+        }
+        function focusTopView() { gsapAnimateCamera({ x: 0, y: 55, z: 0 }, { x: 0, y: 0, z: 0 }); }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        function updateStatsUI() {
+            const keys = Object.keys(inventoryDB).filter(k => inventoryDB[k] && inventoryDB[k].length > 0);
+            document.getElementById('statTotalPositions').innerText = Object.keys(positionDataMap).length;
+            document.getElementById('statOccupiedPositions').innerText = keys.length;
+        }
+
+        window.addEventListener('DOMContentLoaded', initApp);
+    </script>
+</body>
+</html>
