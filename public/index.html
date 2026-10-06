@@ -711,7 +711,7 @@
       renderer.setPixelRatio(Math.min(devicePixelRatio || 1, innerWidth < 760 ? 1.25 : 1.65));
       renderer.outputEncoding = THREE.sRGBEncoding;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.05;
+      renderer.toneMappingExposure = 1.18;
       renderer.shadowMap.enabled = innerWidth > 850;
       renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       renderer.domElement.tabIndex = 0;
@@ -730,9 +730,9 @@
       controls.target.set(0, 3.2, -4.5);
       controls.screenSpacePanning = true;
 
-      const hemi = new THREE.HemisphereLight(0xffffff, 0x0f172a, .78);
+      const hemi = new THREE.HemisphereLight(0xffffff, 0x0b1220, .95);
       scene.add(hemi);
-      const key = new THREE.DirectionalLight(0xffffff, .88);
+      const key = new THREE.DirectionalLight(0xffffff, 1.08);
       key.position.set(22, 31, 18);
       key.castShadow = renderer.shadowMap.enabled;
       if (key.castShadow) {
@@ -740,18 +740,18 @@
         key.shadow.camera.left = -30; key.shadow.camera.right = 30; key.shadow.camera.top = 30; key.shadow.camera.bottom = -30;
       }
       scene.add(key);
-      const fill = new THREE.DirectionalLight(0x94a3b8, .16);
+      const fill = new THREE.DirectionalLight(0x60a5fa, .24);
       fill.position.set(-20, 12, -18); scene.add(fill);
-      const warm = new THREE.PointLight(0xf59e0b, .22, 45);
+      const warm = new THREE.PointLight(0xf59e0b, .42, 52);
       warm.position.set(0, 9, -7); scene.add(warm);
 
       const floor = new THREE.Mesh(
         new THREE.PlaneGeometry(90, 72),
-        new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: .84, metalness: .02 })
+        new THREE.MeshStandardMaterial({ color: 0x24344d, roughness: .78, metalness: .03 })
       );
       floor.rotation.x = -Math.PI / 2; floor.position.z = -4.5; floor.receiveShadow = true; scene.add(floor);
 
-      const grid = new THREE.GridHelper(90, 60, 0x334155, 0x1e293b);
+      const grid = new THREE.GridHelper(90, 60, 0x3f5878, 0x26364d);
       grid.position.set(0, .012, -4.5);
       if (Array.isArray(grid.material)) grid.material.forEach(m => { m.opacity = .27; m.transparent = true; });
       else { grid.material.opacity = .27; grid.material.transparent = true; }
@@ -773,8 +773,8 @@
     }
 
     function createAisles() {
-      const lineMat = new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: .48, depthWrite: false });
-      const laneMat = new THREE.MeshBasicMaterial({ color: 0x21314a, transparent: true, opacity: .22, depthWrite: false });
+      const lineMat = new THREE.MeshBasicMaterial({ color: 0xffc928, transparent: true, opacity: .72, depthWrite: false });
+      const laneMat = new THREE.MeshBasicMaterial({ color: 0x2d415f, transparent: true, opacity: .32, depthWrite: false });
       const streetLabels = {
         RUA1: 'RUA 1 • C / D', RUA2: 'RUA 2 • E / F', RUA3: 'RUA 3 • G / H', RUA4: 'RUA 4 • I', RUA5: 'RUA 5 • J'
       };
@@ -804,10 +804,10 @@
     }
 
     function generateWarehouseLayout() {
-      const uprightMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: .52, metalness: .62 });
-      const beamMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: .48, metalness: .26 });
-      const deckMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: .72, metalness: .30, transparent: true, opacity: .58 });
-      const bootMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: .42 });
+      const uprightMat = new THREE.MeshStandardMaterial({ color: 0x1f2f46, roughness: .46, metalness: .68 });
+      const beamMat = new THREE.MeshStandardMaterial({ color: 0xff9f0a, roughness: .40, metalness: .22, emissive: 0x2b1400, emissiveIntensity: .18 });
+      const deckMat = new THREE.MeshStandardMaterial({ color: 0x41536f, roughness: .62, metalness: .34, transparent: true, opacity: .68 });
+      const bootMat = new THREE.MeshStandardMaterial({ color: 0xffb000, roughness: .34, emissive: 0x2a1500, emissiveIntensity: .12 });
       const disabledMat = new THREE.MeshStandardMaterial({ color: 0x475569, transparent: true, opacity: .13, roughness: .9 });
 
       Object.entries(CORRIDOR_CONFIGS).forEach(([corrCode, cfg]) => {
@@ -917,12 +917,12 @@
         ? [{ x:-.43, y:-.10, w:.76, h:.58, d:.72 }, { x:.43, y:-.10, w:.76, h:.58, d:.72 }]
         : [{ x:-.43, y:-.13, w:.76, h:.50, d:.72 }, { x:.43, y:-.13, w:.76, h:.50, d:.72 }, { x:0, y:.34, w:1.15, h:.38, d:.66 }];
       configs.forEach((c, idx) => {
-        const mat = new THREE.MeshStandardMaterial({ color: idx === 2 ? 0xc97708 : 0xd8890b, roughness: .66, metalness: .03, transparent: true, opacity: 1, emissive: 0x000000 });
+        const mat = new THREE.MeshStandardMaterial({ color: idx === 2 ? 0xff8a00 : 0xff9800, roughness: .52, metalness: .02, transparent: true, opacity: 1, emissive: 0x2a1200, emissiveIntensity: .10 });
         const box = new THREE.Mesh(new THREE.BoxGeometry(c.w, c.h, c.d), mat);
         box.position.set(c.x, c.y - .02, 0);
         box.castShadow = renderer.shadowMap.enabled;
         box.userData.isCargo = true;
-        box.userData.baseColor = idx === 2 ? 0xc97708 : 0xd8890b;
+        box.userData.baseColor = idx === 2 ? 0xff8a00 : 0xff9800;
         group.add(box);
       });
       return group;
@@ -970,7 +970,7 @@
           } else if (highlighted) {
             mat.color.setHex(0xfbbf24); mat.emissive.setHex(0x6d4300); mat.emissiveIntensity = .75;
           } else if (focusActive) {
-            mat.color.setHex(child.userData.baseColor || 0xd8890b); mat.opacity = .13; mat.emissiveIntensity = 0;
+            mat.color.setHex(child.userData.baseColor || 0xff9800); mat.opacity = .13; mat.emissiveIntensity = 0;
           } else if (heatmapMode) {
             mat.color.setHex(densityColor(items.length)); mat.emissiveIntensity = 0;
           } else {
