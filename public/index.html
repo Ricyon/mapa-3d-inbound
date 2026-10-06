@@ -1,975 +1,1310 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mapa 3D Almoxarifado SLMB</title>
-    <!-- Bibliotecas entregues pelo próprio Worker para reduzir bloqueios e aproveitar cache da Cloudflare. -->
-    <script src="/vendor/tailwind.js"></script>
-    <script src="/vendor/lucide.js"></script>
-    <script src="/vendor/three.min.js"></script>
-    <script src="/vendor/OrbitControls.js"></script>
-    <script src="/vendor/xlsx.full.min.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#08111f">
+  <title>Mapa 3D Inbound • Almoxarifado SLMB</title>
+  <script src="/vendor/lucide.js"></script>
+  <script src="/vendor/three.min.js"></script>
+  <script src="/vendor/OrbitControls.js"></script>
+  <script src="/vendor/xlsx.full.min.js"></script>
+  <style>
+    :root {
+      --bg: #08111f;
+      --panel: rgba(10, 19, 34, .88);
+      --panel-strong: rgba(8, 16, 30, .96);
+      --card: rgba(21, 34, 54, .78);
+      --line: rgba(148, 163, 184, .16);
+      --line-strong: rgba(148, 163, 184, .28);
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --amber: #f59e0b;
+      --amber-2: #fbbf24;
+      --cyan: #22d3ee;
+      --green: #34d399;
+      --red: #fb7185;
+      --shadow: 0 18px 60px rgba(0, 0, 0, .35);
+    }
 
-    <style>
-        body { margin: 0; overflow: hidden; background-color: #0f172a; font-family: 'Inter', system-ui, -apple-system, sans-serif; color: #f8fafc; }
-        #canvas-container { width: 100vw; height: 100vh; display: block; }
-        .glass { background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); }
-        .glass-card { background: rgba(30, 41, 59, 0.8); backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.08); }
-        
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.6); }
-        ::-webkit-scrollbar-thumb { background: rgba(51, 65, 85, 0.8); border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: rgba(71, 85, 105, 1); }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body {
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+    }
+    button, input { font: inherit; }
+    button { color: inherit; }
+    #canvas-container { position: fixed; inset: 0; }
+    #canvas-container canvas { display: block; width: 100%; height: 100%; outline: none; }
 
-        #tooltip {
-            position: absolute;
-            display: none;
-            pointer-events: none;
-            z-index: 50;
-            transition: opacity 0.15s ease-out;
-        }
+    .vignette {
+      position: fixed; inset: 0; pointer-events: none; z-index: 2;
+      background:
+        radial-gradient(circle at 50% 43%, transparent 45%, rgba(3, 8, 18, .18) 78%, rgba(3, 8, 18, .48) 100%),
+        linear-gradient(180deg, rgba(2, 8, 18, .18), transparent 22%, transparent 74%, rgba(2, 8, 18, .18));
+    }
+    .glass {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px) saturate(140%);
+      -webkit-backdrop-filter: blur(18px) saturate(140%);
+    }
+    .topbar {
+      position: fixed; z-index: 20; top: 12px; left: 12px; right: 12px;
+      min-height: 70px; display: grid; grid-template-columns: minmax(240px, auto) minmax(280px, 1fr) auto;
+      align-items: center; gap: 14px; padding: 10px 12px; border-radius: 18px;
+    }
+    .brand { min-width: 0; display: flex; align-items: center; gap: 11px; }
+    .brand-icon {
+      width: 44px; height: 44px; flex: 0 0 auto; border-radius: 13px; display: grid; place-items: center;
+      background: linear-gradient(145deg, rgba(245,158,11,.23), rgba(245,158,11,.08));
+      border: 1px solid rgba(245,158,11,.36); color: var(--amber-2);
+    }
+    .brand-copy { min-width: 0; }
+    .brand-title-row { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+    .brand h1 { margin: 0; font-size: 16px; letter-spacing: .01em; line-height: 1.15; white-space: nowrap; }
+    .brand p { margin: 4px 0 0; color: var(--muted); font-size: 11px; white-space: nowrap; }
+    .pill {
+      display: inline-flex; align-items: center; gap: 5px; min-height: 22px; padding: 3px 8px; border-radius: 999px;
+      border: 1px solid var(--line); background: rgba(15,23,42,.66); color: #cbd5e1; font-size: 10px; font-weight: 700;
+      white-space: nowrap;
+    }
+    .pill.ok { color: #86efac; border-color: rgba(52,211,153,.24); background: rgba(16,185,129,.10); }
+    .sync-dot { width: 7px; height: 7px; border-radius: 50%; background: #64748b; box-shadow: 0 0 0 3px rgba(100,116,139,.12); }
+    .sync-dot.online { background: var(--green); box-shadow: 0 0 0 3px rgba(52,211,153,.13); }
+    .sync-dot.offline { background: var(--amber); box-shadow: 0 0 0 3px rgba(245,158,11,.13); }
 
-        #toast-container {
-            position: fixed;
-            bottom: 1.5rem;
-            right: 1.5rem;
-            z-index: 100;
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-            pointer-events: none;
-        }
-        .toast {
-            background: rgba(30, 41, 59, 0.95);
-            backdrop-filter: blur(8px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            color: white;
-            padding: 1rem;
-            border-radius: 0.75rem;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            transform: translateX(120%);
-            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        .toast.show { transform: translateX(0); }
+    .search-wrap { min-width: 0; display: flex; align-items: center; gap: 8px; }
+    .search-box { position: relative; flex: 1; min-width: 0; }
+    .search-box > svg, .search-box > i { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); width: 17px; height: 17px; color: #64748b; pointer-events: none; }
+    .search-input {
+      width: 100%; height: 44px; border: 1px solid rgba(100,116,139,.34); border-radius: 13px; outline: none;
+      background: rgba(5,12,24,.68); color: var(--text); padding: 0 42px 0 40px; font-size: 13px;
+      transition: border-color .18s, box-shadow .18s, background .18s;
+    }
+    .search-input::placeholder { color: #75839a; }
+    .search-input:focus { border-color: rgba(245,158,11,.72); box-shadow: 0 0 0 3px rgba(245,158,11,.10); background: rgba(5,12,24,.88); }
+    .search-clear {
+      position: absolute; right: 8px; top: 50%; transform: translateY(-50%); width: 30px; height: 30px; border: 0; border-radius: 9px;
+      background: transparent; color: #64748b; cursor: pointer; display: grid; place-items: center;
+    }
+    .search-clear:hover { background: rgba(148,163,184,.10); color: #e2e8f0; }
+    .hidden { display: none !important; }
 
-        .sync-pill { display:inline-flex; align-items:center; gap:.35rem; }
-        .sync-dot { width:.45rem; height:.45rem; border-radius:999px; background:#94a3b8; box-shadow:0 0 0 3px rgba(148,163,184,.12); }
-        .sync-dot.online { background:#34d399; box-shadow:0 0 0 3px rgba(52,211,153,.12); }
-        .sync-dot.offline { background:#f59e0b; box-shadow:0 0 0 3px rgba(245,158,11,.12); }
-        #sideDrawer.is-open { transform: translateX(0) !important; }
-        @media (max-width: 768px) {
-            header { top:.5rem !important; left:.5rem !important; right:.5rem !important; padding:.75rem !important; gap:.65rem !important; }
-            header > div:first-child { width:100%; }
-            header h1 { font-size:.95rem !important; line-height:1.2; flex-wrap:wrap; }
-            header p { display:none; }
-            header .max-w-xl { max-width:none !important; width:100%; order:3; }
-            header > div:last-child { width:100%; overflow-x:auto; padding-bottom:.1rem; }
-            header > div:last-child button { flex:0 0 auto; }
-            #searchResultsPanel { top:12.25rem !important; left:.5rem !important; right:.5rem !important; width:auto !important; max-height:48vh !important; }
-            #sideDrawer { top:auto !important; left:.5rem !important; right:.5rem !important; bottom:.5rem !important; width:auto !important; max-height:60vh; transform:translateY(115%) !important; border-radius:1rem !important; }
-            #sideDrawer.is-open { transform:translateY(0) !important; }
-            #tooltip { display:none !important; }
-            #toast-container { left:.75rem; right:.75rem; bottom:4.8rem; }
-            .toast { width:100%; }
-        }
-    </style>
+    .btn {
+      height: 40px; border-radius: 12px; border: 1px solid var(--line); background: rgba(24,38,60,.72); color: #e2e8f0;
+      display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 12px; font-size: 11px; font-weight: 750;
+      cursor: pointer; white-space: nowrap; transition: transform .15s, background .15s, border-color .15s, color .15s;
+    }
+    .btn:hover { background: rgba(40,55,78,.88); border-color: var(--line-strong); }
+    .btn:active { transform: translateY(1px); }
+    .btn svg { width: 16px; height: 16px; }
+    .btn-primary { background: linear-gradient(135deg, #f59e0b, #fbbf24); color: #1f2937; border-color: rgba(251,191,36,.72); box-shadow: 0 8px 22px rgba(245,158,11,.16); }
+    .btn-primary:hover { background: linear-gradient(135deg, #fbbf24, #fcd34d); }
+    .btn-green { background: linear-gradient(135deg, #059669, #10b981); color: white; border-color: rgba(52,211,153,.34); box-shadow: 0 8px 22px rgba(16,185,129,.12); }
+    .btn-green:hover { background: linear-gradient(135deg, #10b981, #34d399); }
+    .actions { display: flex; align-items: center; gap: 7px; }
+
+    .viewbar {
+      position: fixed; z-index: 18; left: 50%; bottom: 16px; transform: translateX(-50%);
+      display: flex; align-items: center; gap: 3px; padding: 6px; border-radius: 15px; max-width: calc(100vw - 28px); overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .viewbar::-webkit-scrollbar { display: none; }
+    .viewbar .nav-label { display: inline-flex; align-items: center; gap: 6px; padding: 0 9px; color: #94a3b8; font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
+    .view-btn {
+      min-height: 36px; border: 0; border-radius: 10px; background: transparent; color: #aebbd0; padding: 0 10px; cursor: pointer; white-space: nowrap;
+      font-size: 10.5px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; transition: background .15s, color .15s;
+    }
+    .view-btn:hover { background: rgba(148,163,184,.10); color: white; }
+    .view-btn.active { background: rgba(245,158,11,.14); color: #fde68a; box-shadow: inset 0 0 0 1px rgba(245,158,11,.20); }
+    .view-sep { width: 1px; height: 20px; background: var(--line); flex: 0 0 auto; }
+
+    .stats {
+      position: fixed; z-index: 15; left: 14px; bottom: 15px; width: 210px; border-radius: 16px; padding: 12px;
+    }
+    .stats-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #aab8cd; font-size: 9.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+    .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 9px; }
+    .stat { padding: 8px; border-radius: 11px; background: rgba(3,10,22,.50); border: 1px solid rgba(100,116,139,.14); }
+    .stat span { display: block; color: #73839b; font-size: 8.5px; line-height: 1.15; }
+    .stat strong { display: block; margin-top: 3px; color: #f8fafc; font-size: 13px; }
+    .stats-date { margin-top: 8px; color: #6f8099; font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .control-hint {
+      position: fixed; z-index: 13; left: 50%; top: 96px; transform: translateX(-50%);
+      border: 1px solid rgba(148,163,184,.14); background: rgba(8,17,31,.62); color: #8fa0b8; backdrop-filter: blur(10px);
+      border-radius: 999px; padding: 7px 11px; font-size: 10px; pointer-events: none; opacity: 1; transition: opacity .35s;
+    }
+    .control-hint.hide { opacity: 0; }
+
+    .drawer {
+      position: fixed; z-index: 24; top: 94px; right: 14px; bottom: 14px; width: min(380px, calc(100vw - 28px));
+      border-radius: 18px; transform: translateX(calc(100% + 30px)); transition: transform .28s cubic-bezier(.2,.8,.2,1); overflow: hidden;
+      display: flex; flex-direction: column;
+    }
+    .drawer.open { transform: translateX(0); }
+    .drawer-head { padding: 15px; border-bottom: 1px solid var(--line); background: rgba(5,12,24,.34); }
+    .drawer-title-row { display: flex; align-items: center; gap: 11px; }
+    .pos-badge {
+      width: 44px; height: 44px; border-radius: 13px; display: grid; place-items: center; color: #fde68a; font-weight: 900;
+      background: rgba(245,158,11,.13); border: 1px solid rgba(245,158,11,.28); flex: 0 0 auto;
+    }
+    .drawer-titles { flex: 1; min-width: 0; }
+    .drawer-titles h2 { margin: 0; font-size: 18px; line-height: 1.1; }
+    .drawer-titles p { margin: 4px 0 0; color: #7f8fa7; font-size: 10px; }
+    .icon-btn {
+      width: 38px; height: 38px; display: grid; place-items: center; border-radius: 11px; border: 1px solid var(--line); background: rgba(15,23,42,.64);
+      color: #94a3b8; cursor: pointer; flex: 0 0 auto;
+    }
+    .icon-btn:hover { color: white; border-color: var(--line-strong); background: rgba(30,41,59,.86); }
+    .loc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 12px; }
+    .loc-card { padding: 9px 10px; border-radius: 11px; background: rgba(15,26,44,.68); border: 1px solid rgba(100,116,139,.14); }
+    .loc-card small { display: block; color: #728198; font-size: 8px; text-transform: uppercase; letter-spacing: .06em; }
+    .loc-card strong { display: block; margin-top: 3px; font-size: 11px; color: #dce5f2; }
+    .drawer-nav { display: grid; grid-template-columns: 1fr 1.2fr 1fr; gap: 6px; padding: 10px 15px; border-bottom: 1px solid var(--line); }
+    .drawer-nav button { height: 34px; border-radius: 9px; border: 1px solid var(--line); background: rgba(15,23,42,.58); color: #aab8cd; font-size: 10px; font-weight: 750; cursor: pointer; }
+    .drawer-nav button:hover { color: white; background: rgba(30,41,59,.86); }
+    .drawer-nav .focus-btn { color: #a5f3fc; border-color: rgba(34,211,238,.20); background: rgba(34,211,238,.06); }
+    .drawer-body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px; }
+    .section-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 9px; }
+    .section-title { display: flex; align-items: center; gap: 7px; color: #b8c4d7; font-size: 9.5px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
+    .count-pill { padding: 3px 7px; border-radius: 999px; background: rgba(51,65,85,.52); color: #9aa9be; font: 9px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .materials { display: grid; gap: 7px; }
+    .material-card { padding: 11px; border-radius: 12px; background: rgba(6,14,27,.62); border: 1px solid rgba(100,116,139,.16); }
+    .material-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+    .material-code { color: #fbbf24; font: 800 11px ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+    .material-qty { color: #6ee7b7; font: 800 10px ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
+    .material-desc { margin: 5px 0 0; color: #b9c5d7; font-size: 10px; line-height: 1.35; }
+    .empty-state { padding: 28px 10px; text-align: center; color: #697991; font-size: 10px; }
+    .drawer-foot { padding: 10px 14px; border-top: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #76869d; font-size: 9.5px; background: rgba(5,12,24,.28); }
+    .status-active { color: #6ee7b7; font-weight: 800; }
+
+    .results {
+      position: fixed; z-index: 23; top: 94px; left: 14px; width: min(330px, calc(100vw - 28px)); max-height: calc(100vh - 180px);
+      border-radius: 16px; overflow: hidden; display: flex; flex-direction: column;
+    }
+    .results-head { padding: 12px; border-bottom: 1px solid var(--line); background: rgba(5,12,24,.32); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .results-head h3 { margin: 0; font-size: 12px; }
+    .results-head p { margin: 3px 0 0; color: #73839b; font-size: 9px; }
+    .results-list { padding: 8px; display: grid; gap: 6px; overflow-y: auto; }
+    .result-card { width: 100%; text-align: left; border: 1px solid rgba(100,116,139,.16); background: rgba(9,18,33,.72); border-radius: 11px; padding: 9px; color: inherit; cursor: pointer; }
+    .result-card:hover { border-color: rgba(245,158,11,.36); background: rgba(22,32,50,.88); }
+    .result-key { color: #fbbf24; font: 850 10.5px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .result-desc { color: #a9b7ca; font-size: 9.5px; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .result-meta { color: #64748b; font-size: 8.5px; margin-top: 4px; }
+
+    #tooltip {
+      position: fixed; z-index: 35; pointer-events: none; min-width: 175px; max-width: 260px; padding: 10px 11px; border-radius: 12px;
+      background: rgba(6,14,27,.92); border: 1px solid rgba(245,158,11,.25); box-shadow: 0 14px 38px rgba(0,0,0,.30); backdrop-filter: blur(12px);
+    }
+    .tt-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .tt-key { color: #fbbf24; font: 900 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .tt-status { padding: 2px 6px; border-radius: 999px; background: rgba(16,185,129,.11); color: #6ee7b7; font-size: 8px; font-weight: 800; }
+    .tt-line { margin-top: 6px; color: #91a1b8; font-size: 9px; }
+    .tt-line strong { color: #dbe5f3; }
+
+    .modal-backdrop {
+      position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: rgba(2,8,18,.76); backdrop-filter: blur(8px);
+    }
+    .modal { width: min(450px, 100%); border-radius: 18px; padding: 18px; }
+    .modal-head { display: flex; align-items: center; gap: 11px; }
+    .modal-icon { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; background: rgba(16,185,129,.10); border: 1px solid rgba(52,211,153,.22); color: #6ee7b7; }
+    .modal-head h3 { margin: 0; font-size: 16px; }
+    .modal-head p { margin: 3px 0 0; color: #7b8aa1; font-size: 10px; }
+    .field-label { display: block; margin: 15px 0 6px; color: #c3cedd; font-size: 10px; font-weight: 750; }
+    .field { width: 100%; height: 42px; border-radius: 11px; border: 1px solid rgba(100,116,139,.26); background: rgba(3,10,22,.55); color: white; padding: 0 12px; outline: none; font-size: 13px; }
+    .field:focus { border-color: rgba(52,211,153,.50); box-shadow: 0 0 0 3px rgba(52,211,153,.08); }
+    .field-help { margin: 5px 0 0; color: #607089; font-size: 8.5px; }
+    .dropzone {
+      margin-top: 13px; min-height: 145px; border-radius: 14px; border: 1.5px dashed rgba(100,116,139,.48); background: rgba(3,10,22,.34);
+      display: grid; place-items: center; text-align: center; padding: 22px; cursor: pointer; transition: border-color .18s, background .18s;
+    }
+    .dropzone:hover, .dropzone.drag { border-color: rgba(52,211,153,.55); background: rgba(16,185,129,.045); }
+    .dropzone svg { width: 38px; height: 38px; color: #74849b; margin-bottom: 8px; }
+    .dropzone strong { display: block; font-size: 12px; color: #d6dfec; }
+    .dropzone span { display: block; margin-top: 4px; color: #74849b; font-size: 9.5px; }
+
+    #toast-container { position: fixed; z-index: 80; right: 16px; bottom: 76px; display: grid; gap: 8px; width: min(390px, calc(100vw - 32px)); pointer-events: none; }
+    .toast { transform: translateX(115%); opacity: 0; transition: transform .26s cubic-bezier(.2,.8,.2,1), opacity .26s; border-radius: 13px; padding: 11px 12px; display: flex; align-items: center; gap: 9px; background: rgba(8,17,31,.94); border: 1px solid var(--line); box-shadow: var(--shadow); color: #dce5f1; font-size: 10.5px; }
+    .toast.show { transform: translateX(0); opacity: 1; }
+    .toast svg { width: 17px; height: 17px; flex: 0 0 auto; }
+    .toast.success svg { color: #6ee7b7; }
+    .toast.error svg { color: #fb7185; }
+    .toast.info svg { color: #67e8f9; }
+
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: rgba(15,23,42,.42); }
+    ::-webkit-scrollbar-thumb { background: rgba(100,116,139,.42); border-radius: 999px; }
+
+    @media (max-width: 1100px) {
+      .topbar { grid-template-columns: auto 1fr; }
+      .actions { grid-column: 1 / -1; justify-content: flex-end; }
+      .control-hint { top: 144px; }
+      .drawer, .results { top: 148px; }
+    }
+    @media (max-width: 760px) {
+      .topbar { top: 7px; left: 7px; right: 7px; padding: 8px; border-radius: 15px; grid-template-columns: 1fr; gap: 7px; }
+      .brand-icon { width: 38px; height: 38px; border-radius: 11px; }
+      .brand h1 { font-size: 13px; }
+      .brand p { display: none; }
+      .brand-title-row .pill:first-of-type { display: none; }
+      .search-input { height: 42px; font-size: 12px; }
+      .actions { grid-column: auto; justify-content: flex-start; overflow-x: auto; scrollbar-width: none; }
+      .actions::-webkit-scrollbar { display: none; }
+      .actions .btn { flex: 0 0 auto; height: 36px; padding: 0 10px; }
+      .control-hint { display: none; }
+      .results { top: 165px; left: 7px; right: 7px; width: auto; max-height: 42vh; }
+      .drawer { top: auto; left: 7px; right: 7px; bottom: 7px; width: auto; max-height: 58vh; transform: translateY(calc(100% + 20px)); border-radius: 16px; }
+      .drawer.open { transform: translateY(0); }
+      .drawer-head { padding: 12px; }
+      .drawer-body { padding: 11px; }
+      .viewbar { bottom: 7px; max-width: calc(100vw - 14px); border-radius: 13px; }
+      .stats { display: none; }
+      #tooltip { display: none !important; }
+      #toast-container { left: 10px; right: 10px; bottom: 66px; width: auto; }
+      .viewbar .nav-label { display: none; }
+      .view-btn { min-height: 34px; padding: 0 9px; }
+    }
+  </style>
 </head>
-<body class="select-none">
+<body>
+  <div id="canvas-container"></div>
+  <div class="vignette"></div>
 
-    <!-- 3D Canvas -->
-    <div id="canvas-container"></div>
-
-    <!-- Header / Top Navigation Bar -->
-    <header class="absolute top-4 left-4 right-4 glass rounded-2xl px-6 py-3.5 flex flex-wrap items-center justify-between z-20 gap-4 shadow-2xl">
-        <div class="flex items-center gap-3">
-            <div class="p-2.5 bg-amber-500/20 text-amber-400 rounded-xl border border-amber-500/30 flex items-center justify-center">
-                <i data-lucide="box" class="w-6 h-6"></i>
-            </div>
-            <div>
-                <h1 class="font-bold text-lg text-white tracking-wide flex items-center gap-2">
-                    Mapa 3D Almoxarifado SLMB
-                    <span class="text-xs font-normal px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">3D Ativo</span>
-                    <span id="syncBadge" class="sync-pill text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700" title="Status da base compartilhada">
-                        <span id="syncDot" class="sync-dot"></span><span id="syncText">Sincronizando…</span>
-                    </span>
-                </h1>
-                <p class="text-xs text-slate-400">Consulta de Endereços, Posições e Estoque SAP</p>
-            </div>
+  <header class="topbar glass">
+    <div class="brand">
+      <div class="brand-icon"><i data-lucide="warehouse"></i></div>
+      <div class="brand-copy">
+        <div class="brand-title-row">
+          <h1>Mapa 3D Almoxarifado SLMB</h1>
+          <span class="pill ok">3D Ativo</span>
+          <span class="pill"><span id="syncDot" class="sync-dot"></span><span id="syncText">Sincronizando…</span></span>
         </div>
-
-        <!-- Search Bar -->
-        <div class="flex-1 max-w-xl mx-auto flex items-center gap-2">
-            <div class="relative w-full">
-                <i data-lucide="search" class="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                <input id="searchInput" type="text" 
-                    placeholder="Pesquisar por Endereço (ex: ZC01) ou Material (ex: INCO168841)..." 
-                    class="w-full bg-slate-900/80 text-sm text-slate-100 placeholder-slate-400 pl-10 pr-10 py-2.5 rounded-xl border border-slate-700/80 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all">
-                <button id="clearSearchBtn" class="hidden absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200">
-                    <i data-lucide="x" class="w-4 h-4"></i>
-                </button>
-            </div>
-            <button id="searchBtn" class="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-semibold text-sm rounded-xl transition-all shadow-lg shadow-amber-500/20 flex items-center gap-2">
-                <span>Buscar</span>
-            </button>
-        </div>
-
-        <!-- Action Buttons -->
-        <div class="flex items-center gap-2">
-            <button id="toggleLabelsBtn" class="px-3.5 py-2.5 glass-card hover:bg-slate-800 text-slate-200 text-xs font-medium rounded-xl transition-all flex items-center gap-2 border border-slate-700/60">
-                <i data-lucide="tag" class="w-4 h-4 text-cyan-400"></i>
-                <span id="labelsBtnText">Ocultar Rótulos</span>
-            </button>
-            <button id="toggleHeatmapBtn" class="px-3.5 py-2.5 glass-card hover:bg-slate-800 text-slate-200 text-xs font-medium rounded-xl transition-all flex items-center gap-2 border border-slate-700/60">
-                <i data-lucide="flame" class="w-4 h-4 text-amber-400"></i>
-                <span id="heatmapBtnText">Modo Calor</span>
-            </button>
-            <button id="uploadExcelBtn" class="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-xl transition-all shadow-lg shadow-emerald-600/20 flex items-center gap-2">
-                <i data-lucide="file-spreadsheet" class="w-4 h-4"></i>
-                <span>Atualizar Planilha</span>
-            </button>
-        </div>
-    </header>
-
-    <!-- Camera View Presets Bar -->
-    <div class="absolute bottom-6 left-1/2 -translate-x-1/2 glass rounded-2xl px-4 py-2.5 flex items-center gap-2 z-20 shadow-2xl overflow-x-auto max-w-[90vw]">
-        <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider px-2 border-r border-slate-700/60 mr-1 flex items-center gap-1.5">
-            <i data-lucide="compass" class="w-3.5 h-3.5 text-amber-400"></i> Visões
-        </span>
-        <button onclick="resetCameraView()" class="px-3 py-1.5 hover:bg-slate-800/80 text-slate-300 hover:text-white text-xs rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap">
-            <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i> Visão Geral
-        </button>
-        <div class="h-4 w-px bg-slate-700/60 mx-1"></div>
-        <button onclick="focusStreet('RUA1')" class="px-3 py-1.5 hover:bg-slate-800/80 text-slate-300 hover:text-white text-xs rounded-lg transition-all whitespace-nowrap">Rua 1 (C/D)</button>
-        <button onclick="focusStreet('RUA2')" class="px-3 py-1.5 hover:bg-slate-800/80 text-slate-300 hover:text-white text-xs rounded-lg transition-all whitespace-nowrap">Rua 2 (E/F)</button>
-        <button onclick="focusStreet('RUA3')" class="px-3 py-1.5 hover:bg-slate-800/80 text-slate-300 hover:text-white text-xs rounded-lg transition-all whitespace-nowrap">Rua 3 (G/H)</button>
-        <button onclick="focusStreet('RUA4')" class="px-3 py-1.5 hover:bg-slate-800/80 text-slate-300 hover:text-white text-xs rounded-lg transition-all whitespace-nowrap">Rua 4 (I)</button>
-        <button onclick="focusStreet('RUA5')" class="px-3 py-1.5 hover:bg-slate-800/80 text-slate-300 hover:text-white text-xs rounded-lg transition-all whitespace-nowrap">Rua 5 (J)</button>
-        <div class="h-4 w-px bg-slate-700/60 mx-1"></div>
-        <button onclick="focusTopView()" class="px-3 py-1.5 hover:bg-slate-800/80 text-slate-300 hover:text-white text-xs rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap">
-            <i data-lucide="layers" class="w-3.5 h-3.5 text-amber-400"></i> Topo (2D)
-        </button>
+        <p>Consulta inteligente de endereços, posições e materiais do Inbound</p>
+      </div>
     </div>
 
-    <!-- Stats Badge Floating -->
-    <div class="absolute bottom-6 left-6 glass rounded-2xl p-4 hidden md:flex flex-col gap-2 z-20 shadow-2xl border border-slate-700/60 min-w-[200px]">
-        <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-            <i data-lucide="bar-chart-3" class="w-3.5 h-3.5 text-amber-400"></i> Resumo do Estoque
-        </div>
-        <div id="lastUpdateText" class="text-[10px] text-slate-500">Última atualização: --</div>
-        <div class="grid grid-cols-2 gap-2 mt-1 text-xs">
-            <div class="bg-slate-900/60 p-2 rounded-xl border border-slate-800">
-                <span class="text-slate-400 block text-[10px]">Posições Totais</span>
-                <span id="statTotalPositions" class="text-sm font-bold text-slate-100">--</span>
-            </div>
-            <div class="bg-slate-900/60 p-2 rounded-xl border border-slate-800">
-                <span class="text-slate-400 block text-[10px]">Ocupadas</span>
-                <span id="statOccupiedPositions" class="text-sm font-bold text-amber-400">--</span>
-            </div>
-        </div>
+    <div class="search-wrap">
+      <div class="search-box">
+        <i data-lucide="search"></i>
+        <input id="searchInput" class="search-input" autocomplete="off" placeholder="Endereço ou material — ex.: ZD05, INEM007210…">
+        <button id="clearSearchBtn" class="search-clear hidden" aria-label="Limpar busca"><i data-lucide="x"></i></button>
+      </div>
+      <button id="searchBtn" class="btn btn-primary"><i data-lucide="locate-fixed"></i><span>Buscar</span></button>
     </div>
 
-    <!-- Side Panel Drawer -->
-    <aside id="sideDrawer" class="absolute top-24 bottom-6 right-6 w-96 glass rounded-2xl shadow-2xl z-20 flex flex-col transform translate-x-[115%] transition-transform duration-300 ease-out border border-slate-700/80 overflow-hidden">
-        <div class="p-5 border-b border-slate-700/80 flex items-center justify-between bg-slate-900/60">
-            <div class="flex items-center gap-3">
-                <div id="drawerBadge" class="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center font-bold text-base">
-                    --
-                </div>
-                <div>
-                    <h2 id="drawerTitle" class="font-bold text-slate-100 text-lg leading-tight">Posição --</h2>
-                    <p id="drawerSubtitle" class="text-xs text-slate-400">Endereço do Almoxarifado SLMB</p>
-                </div>
-            </div>
-            <button id="closeDrawerBtn" class="p-2 hover:bg-slate-800 rounded-xl text-slate-400 hover:text-white transition-all">
-                <i data-lucide="x" class="w-5 h-5"></i>
-            </button>
-        </div>
-
-        <div class="p-4 bg-slate-900/40 border-b border-slate-800 flex items-center justify-between gap-2 text-xs">
-            <div class="flex-1 bg-slate-800/60 p-2.5 rounded-xl border border-slate-700/50">
-                <span class="text-slate-400 block text-[10px] uppercase">Localização</span>
-                <span id="drawerLocation" class="font-semibold text-slate-200">Rua -- | Coluna --</span>
-            </div>
-            <div class="flex-1 bg-slate-800/60 p-2.5 rounded-xl border border-slate-700/50">
-                <span class="text-slate-400 block text-[10px] uppercase">Nível</span>
-                <span id="drawerLevel" class="font-semibold text-slate-200">Nível --</span>
-            </div>
-        </div>
-
-        <div class="flex-1 overflow-y-auto p-4 space-y-3">
-            <div class="flex items-center justify-between">
-                <span class="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                    <i data-lucide="list" class="w-3.5 h-3.5 text-amber-400"></i> Materiais Alocados
-                </span>
-                <span id="drawerMaterialCount" class="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-mono">0 itens</span>
-            </div>
-
-            <div id="drawerItemList" class="space-y-2">
-                <!-- Dynamic Item Cards -->
-            </div>
-        </div>
-
-        <div class="p-4 bg-slate-900/80 border-t border-slate-800 text-xs flex items-center justify-between text-slate-400">
-            <span>Status: <strong id="drawerStatusText" class="text-emerald-400">Ativo</strong></span>
-        </div>
-    </aside>
-
-    <!-- Search Results Panel -->
-    <div id="searchResultsPanel" class="absolute top-24 left-6 w-80 glass rounded-2xl shadow-2xl z-20 flex flex-col hidden border border-slate-700/80 overflow-hidden max-h-[75vh]">
-        <div class="p-4 border-b border-slate-700/80 bg-slate-900/60 flex items-center justify-between">
-            <div>
-                <h3 class="font-bold text-sm text-slate-100 flex items-center gap-2">
-                    <i data-lucide="layers" class="w-4 h-4 text-amber-400"></i>
-                    Resultados da Busca
-                </h3>
-                <p id="searchResultsCount" class="text-xs text-slate-400">0 posições encontradas</p>
-            </div>
-            <button id="closeResultsBtn" class="p-1 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white">
-                <i data-lucide="x" class="w-4 h-4"></i>
-            </button>
-        </div>
-        <div id="searchResultsList" class="p-3 overflow-y-auto space-y-2 flex-1">
-            <!-- Position Result Cards -->
-        </div>
+    <div class="actions">
+      <button id="toggleLabelsBtn" class="btn" title="Alternar nível de rótulos"><i data-lucide="tags"></i><span id="labelsBtnText">Rótulos: Auto</span></button>
+      <button id="toggleHeatmapBtn" class="btn"><i data-lucide="flame"></i><span id="heatmapBtnText">Modo Calor</span></button>
+      <button id="uploadExcelBtn" class="btn btn-green"><i data-lucide="file-spreadsheet"></i><span>Atualizar Planilha</span></button>
     </div>
+  </header>
 
-    <!-- 3D Hover Tooltip -->
-    <div id="tooltip" class="glass-card rounded-xl p-3 shadow-2xl border border-amber-500/30 text-xs min-w-[160px]">
-        <div class="flex items-center justify-between gap-2 border-b border-slate-700/60 pb-1.5 mb-1.5">
-            <span id="ttPosName" class="font-bold text-amber-400 text-sm">ZC01</span>
-            <span id="ttStatus" class="px-1.5 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-400 font-semibold">Ocupado</span>
-        </div>
-        <div class="space-y-1 text-slate-300 text-[11px]">
-            <p><span class="text-slate-400">Corredor:</span> <strong id="ttCorredor" class="text-slate-200">--</strong></p>
-            <p><span class="text-slate-400">Materiais:</span> <strong id="ttItemCount" class="text-slate-200">0</strong></p>
-        </div>
+  <div id="controlHint" class="control-hint">Arraste para girar • Scroll para aproximar • Clique numa posição • / para pesquisar</div>
+
+  <div class="viewbar glass" id="viewbar">
+    <span class="nav-label"><i data-lucide="compass" style="width:14px"></i> Visões</span>
+    <button class="view-btn active" data-view="overview" id="viewOverview"><i data-lucide="scan"></i> Geral</button>
+    <div class="view-sep"></div>
+    <button class="view-btn" data-view="RUA1">Rua 1 (C/D)</button>
+    <button class="view-btn" data-view="RUA2">Rua 2 (E/F)</button>
+    <button class="view-btn" data-view="RUA3">Rua 3 (G/H)</button>
+    <button class="view-btn" data-view="RUA4">Rua 4 (I)</button>
+    <button class="view-btn" data-view="RUA5">Rua 5 (J)</button>
+    <div class="view-sep"></div>
+    <button class="view-btn" data-view="top"><i data-lucide="layers-3"></i> Topo 2D</button>
+  </div>
+
+  <section class="stats glass" aria-label="Resumo do estoque">
+    <div class="stats-head"><span>Resumo do estoque</span><i data-lucide="bar-chart-3" style="width:14px"></i></div>
+    <div class="stats-grid">
+      <div class="stat"><span>Posições</span><strong id="statTotalPositions">—</strong></div>
+      <div class="stat"><span>Ocupadas</span><strong id="statOccupiedPositions">—</strong></div>
+      <div class="stat"><span>Ocupação</span><strong id="statOccupancy">—</strong></div>
     </div>
+    <div class="stats-date" id="lastUpdateText">Última atualização: —</div>
+  </section>
 
-    <!-- Excel Upload Modal -->
-    <div id="uploadModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
-        <div class="glass rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-700 relative">
-            <button id="closeModalBtn" class="absolute top-4 right-4 text-slate-400 hover:text-white">
-                <i data-lucide="x" class="w-5 h-5"></i>
-            </button>
-            <div class="flex items-center gap-3 mb-4">
-                <div class="p-3 bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/30">
-                    <i data-lucide="file-spreadsheet" class="w-6 h-6"></i>
-                </div>
-                <div>
-                    <h3 class="font-bold text-lg text-white">Atualizar Dados</h3>
-                    <p class="text-xs text-slate-400">Importe a planilha ZMM023 (.xlsx)</p>
-                </div>
-            </div>
-            
-            <div class="mb-4">
-                <label for="adminKeyInput" class="block text-xs font-semibold text-slate-300 mb-1.5">Chave de atualização</label>
-                <input id="adminKeyInput" type="password" autocomplete="current-password" placeholder="Digite a chave para publicar a nova base"
-                    class="w-full bg-slate-900/80 text-sm text-slate-100 placeholder-slate-500 px-3.5 py-2.5 rounded-xl border border-slate-700 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
-                <p class="text-[10px] text-slate-500 mt-1.5">A chave só é usada nesta atualização e não fica salva permanentemente.</p>
-            </div>
-
-            <div id="dropZone" class="border-2 border-dashed border-slate-700 hover:border-emerald-500 rounded-xl p-8 text-center cursor-pointer transition-all bg-slate-900/40 hover:bg-slate-900/80">
-                <i data-lucide="upload-cloud" class="w-10 h-10 text-slate-400 mx-auto mb-2"></i>
-                <p class="text-sm font-medium text-slate-200">Arraste a planilha aqui</p>
-                <p class="text-xs text-slate-400 mt-1">ou clique para procurar</p>
-                <input type="file" id="excelFileInput" accept=".xlsx, .xls, .csv" class="hidden">
-            </div>
+  <aside id="sideDrawer" class="drawer glass" aria-label="Detalhes da posição">
+    <div class="drawer-head">
+      <div class="drawer-title-row">
+        <div id="drawerBadge" class="pos-badge">--</div>
+        <div class="drawer-titles">
+          <h2 id="drawerTitle">Posição --</h2>
+          <p id="drawerSubtitle">Endereço do Almoxarifado SLMB</p>
         </div>
+        <button id="closeDrawerBtn" class="icon-btn" aria-label="Fechar"><i data-lucide="x"></i></button>
+      </div>
+      <div class="loc-grid">
+        <div class="loc-card"><small>Localização</small><strong id="drawerLocation">Rua -- | Col --</strong></div>
+        <div class="loc-card"><small>Nível</small><strong id="drawerLevel">Nível --</strong></div>
+      </div>
     </div>
+    <div class="drawer-nav">
+      <button id="prevPosBtn">← Anterior</button>
+      <button id="centerPosBtn" class="focus-btn"><i data-lucide="crosshair" style="width:12px;vertical-align:-2px"></i> Centralizar</button>
+      <button id="nextPosBtn">Próxima →</button>
+    </div>
+    <div class="drawer-body">
+      <div class="section-row">
+        <div class="section-title"><i data-lucide="package-search" style="width:14px"></i> Materiais alocados</div>
+        <span id="drawerMaterialCount" class="count-pill">0 materiais</span>
+      </div>
+      <div id="drawerItemList" class="materials"></div>
+    </div>
+    <div class="drawer-foot"><span>Status: <strong id="drawerStatusText" class="status-active">Ativo</strong></span><span id="drawerFocusText">Modo foco</span></div>
+  </aside>
 
-    <!-- Custom Toast Container -->
-    <div id="toast-container"></div>
+  <section id="searchResultsPanel" class="results glass hidden" aria-label="Resultados da busca">
+    <div class="results-head">
+      <div><h3>Resultados da busca</h3><p id="searchResultsCount">0 posições encontradas</p></div>
+      <button id="closeResultsBtn" class="icon-btn" aria-label="Fechar resultados"><i data-lucide="x"></i></button>
+    </div>
+    <div id="searchResultsList" class="results-list"></div>
+  </section>
 
-    <script>
-        lucide.createIcons();
+  <div id="tooltip" class="hidden">
+    <div class="tt-top"><span id="ttPosName" class="tt-key">ZD05</span><span id="ttStatus" class="tt-status">Ocupado</span></div>
+    <div class="tt-line">Corredor: <strong id="ttCorredor">—</strong></div>
+    <div class="tt-line">Materiais: <strong id="ttItemCount">0</strong></div>
+  </div>
 
-        function showToast(message, type = 'info') {
-            const container = document.getElementById('toast-container');
-            const toast = document.createElement('div');
-            toast.className = 'toast';
-            
-            let icon = '<i data-lucide="info" class="w-5 h-5 text-cyan-400"></i>';
-            if(type === 'error') icon = '<i data-lucide="alert-circle" class="w-5 h-5 text-red-400"></i>';
-            if(type === 'success') icon = '<i data-lucide="check-circle" class="w-5 h-5 text-emerald-400"></i>';
+  <div id="uploadModal" class="modal-backdrop hidden">
+    <div class="modal glass">
+      <div class="modal-head">
+        <div class="modal-icon"><i data-lucide="sheet"></i></div>
+        <div style="flex:1"><h3>Atualizar Dados</h3><p>Publique uma nova base ZMM023 para todos os usuários</p></div>
+        <button id="closeModalBtn" class="icon-btn" aria-label="Fechar"><i data-lucide="x"></i></button>
+      </div>
+      <label class="field-label" for="adminKeyInput">Chave de atualização</label>
+      <input id="adminKeyInput" class="field" type="password" autocomplete="off" placeholder="Digite a chave administrativa">
+      <p class="field-help">A chave é usada somente nesta publicação e não fica salva no navegador.</p>
+      <div id="dropZone" class="dropzone" role="button" tabindex="0" aria-label="Selecionar planilha">
+        <div><i data-lucide="cloud-upload"></i><strong>Arraste a planilha aqui</strong><span>ou clique para selecionar .xlsx, .xls ou .csv</span></div>
+        <input id="excelFileInput" type="file" accept=".xlsx,.xls,.csv" class="hidden">
+      </div>
+    </div>
+  </div>
 
-            toast.innerHTML = `${icon}<span class="text-sm font-medium">${message}</span>`;
-            container.appendChild(toast);
-            lucide.createIcons();
+  <div id="toast-container"></div>
 
-            setTimeout(() => toast.classList.add('show'), 10);
-            setTimeout(() => {
-                toast.classList.remove('show');
-                setTimeout(() => toast.remove(), 300);
-            }, 4000);
+  <script>
+    'use strict';
+
+    const CACHE_KEY = 'inbound-map-cache-v1';
+    const COL_WIDTH = 2.45;
+    const LEVEL_HEIGHT = 1.38;
+    const RACK_DEPTH = 1.18;
+    const RACK_LEVELS = 5;
+    const STREET_CENTERS = { RUA1: -17.25, RUA2: -10.25, RUA3: -3.25, RUA4: 3.75, RUA5: 9.25 };
+
+    const CORRIDOR_CONFIGS = {
+      ZC: { street: 'RUA1', name: 'Corredor C', letter: 'C', z: -20.0, faceDir: 1,  cols: 9, maxNum: 45 },
+      ZD: { street: 'RUA1', name: 'Corredor D', letter: 'D', z: -14.5, faceDir: -1, cols: 9, maxNum: 45 },
+      ZE: { street: 'RUA2', name: 'Corredor E', letter: 'E', z: -13.0, faceDir: 1,  cols: 9, maxNum: 45 },
+      ZF: { street: 'RUA2', name: 'Corredor F', letter: 'F', z: -7.5,  faceDir: -1, cols: 9, maxNum: 45 },
+      ZG: { street: 'RUA3', name: 'Corredor G', letter: 'G', z: -6.0,  faceDir: 1,  cols: 9, maxNum: 45 },
+      ZH: { street: 'RUA3', name: 'Corredor H', letter: 'H', z: -0.5,  faceDir: -1, cols: 9, maxNum: 45 },
+      ZI: { street: 'RUA4', name: 'Corredor I', letter: 'I', z: 1.0,   faceDir: 1,  cols: 9, maxNum: 45 },
+      ZJ: { street: 'RUA5', name: 'Corredor J', letter: 'J', z: 6.5,   faceDir: 1,  cols: 5, maxNum: 25 }
+    };
+
+    const DISABLED_POSITIONS = new Set([
+      'ZD11', 'ZD12',
+      ...Array.from({ length: 15 }, (_, i) => `ZF${i + 31}`),
+      ...Array.from({ length: 15 }, (_, i) => `ZG${i + 31}`)
+    ]);
+
+    let inventoryDB = {};
+    let searchIndex = [];
+    let currentVersion = null;
+    let currentLastUpdated = null;
+    let heatmapMode = false;
+    let labelMode = 'auto';
+    let selectedPositionKey = null;
+    let highlightedMaterialPositions = [];
+    let currentViewMode = 'overview';
+    let currentStreet = null;
+    let cameraTweenToken = 0;
+    let frameTick = 0;
+
+    let scene, camera, renderer, controls, raycaster;
+    let positionDataMap = {};
+    let rackMeshMap = {};
+    let positionLabels = [];
+    let bayLabels = [];
+    let corridorLabels = [];
+    let clickTargets = [];
+    let selectionFrame = null;
+    let focusLabel = null;
+    let pointerStart = null;
+
+    function $(id) { return document.getElementById(id); }
+    function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>'"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[c]));
+    }
+    function normalizeText(value) {
+      return String(value ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    }
+    function normalizeKey(key) {
+      if (!key) return '';
+      const k = String(key).trim().toUpperCase();
+      const m = k.match(/^(?:Z)?([C-J])0*(\d+)$/);
+      if (!m) return k;
+      const n = parseInt(m[2], 10);
+      return `Z${m[1]}${n < 10 ? '0' + n : n}`;
+    }
+    function parseQty(raw) {
+      if (typeof raw === 'number') return Number.isFinite(raw) ? Math.abs(raw) : 0;
+      let s = String(raw ?? '').trim().replace(/\s/g, '');
+      if (!s) return 0;
+      if (s.includes(',') && s.includes('.')) {
+        if (s.lastIndexOf(',') > s.lastIndexOf('.')) s = s.replace(/\./g, '').replace(',', '.');
+        else s = s.replace(/,/g, '');
+      } else if (s.includes(',')) s = s.replace(',', '.');
+      const n = Number(s);
+      return Number.isFinite(n) ? Math.abs(n) : 0;
+    }
+    function formatQty(qty) {
+      const n = Number(qty);
+      if (!Number.isFinite(n)) return '0';
+      return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 }).format(n);
+    }
+
+    function showToast(message, type = 'info') {
+      const toast = document.createElement('div');
+      toast.className = `toast ${type}`;
+      const icon = type === 'success' ? 'check-circle-2' : type === 'error' ? 'circle-alert' : 'info';
+      toast.innerHTML = `<i data-lucide="${icon}"></i><span>${escapeHtml(message)}</span>`;
+      $('toast-container').appendChild(toast);
+      if (window.lucide) lucide.createIcons();
+      requestAnimationFrame(() => toast.classList.add('show'));
+      setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+      }, 3900);
+    }
+
+    function updateSyncUI(status, text) {
+      const dot = $('syncDot');
+      dot.classList.remove('online', 'offline');
+      if (status === 'online') dot.classList.add('online');
+      if (status === 'offline') dot.classList.add('offline');
+      $('syncText').textContent = text;
+    }
+    function updateLastUpdateUI(iso) {
+      if (!iso) { $('lastUpdateText').textContent = 'Última atualização: base ainda não publicada'; return; }
+      const d = new Date(iso);
+      $('lastUpdateText').textContent = `Atualizado em ${d.toLocaleString('pt-BR')}`;
+    }
+    function rebuildSearchIndex() {
+      searchIndex = [];
+      Object.entries(inventoryDB).forEach(([position, items]) => {
+        (items || []).forEach(item => {
+          searchIndex.push({ position, item, haystack: normalizeText(`${item.code} ${item.desc}`) });
+        });
+      });
+    }
+    function saveCache(payload) {
+      try {
+        localStorage.setItem(CACHE_KEY, JSON.stringify({ version: payload.version, lastUpdated: payload.lastUpdated, inventory: payload.inventory }));
+      } catch (_) {}
+    }
+    function loadCachedInventory() {
+      try {
+        const cached = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
+        if (!cached || !cached.inventory) return false;
+        inventoryDB = cached.inventory;
+        currentVersion = cached.version || null;
+        currentLastUpdated = cached.lastUpdated || null;
+        rebuildSearchIndex();
+        updateWarehouseLoads();
+        updateLastUpdateUI(currentLastUpdated);
+        updateSyncUI('offline', 'Cache local');
+        return true;
+      } catch (_) { return false; }
+    }
+    async function syncInventory(force = false) {
+      updateSyncUI('', 'Sincronizando…');
+      try {
+        const headers = {};
+        if (!force && currentVersion) headers['If-None-Match'] = `W/"${currentVersion}"`;
+        const response = await fetch('/api/inventory', { headers, cache: 'no-store' });
+        if (response.status === 304) {
+          updateSyncUI('online', 'Sincronizado');
+          updateLastUpdateUI(currentLastUpdated);
+          return;
+        }
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const payload = await response.json();
+        inventoryDB = payload.inventory || {};
+        currentVersion = payload.version || null;
+        currentLastUpdated = payload.lastUpdated || null;
+        rebuildSearchIndex();
+        saveCache(payload);
+        updateWarehouseLoads();
+        updateLastUpdateUI(currentLastUpdated);
+        updateSyncUI('online', 'Sincronizado');
+      } catch (error) {
+        updateSyncUI('offline', 'Offline / cache');
+        showToast('Não foi possível sincronizar a base online. A última cópia disponível foi mantida.', 'error');
+      }
+    }
+
+    function roundRectPath(ctx, x, y, w, h, r) {
+      const rr = Math.min(r, w / 2, h / 2);
+      ctx.beginPath();
+      ctx.moveTo(x + rr, y); ctx.lineTo(x + w - rr, y); ctx.quadraticCurveTo(x + w, y, x + w, y + rr);
+      ctx.lineTo(x + w, y + h - rr); ctx.quadraticCurveTo(x + w, y + h, x + w - rr, y + h);
+      ctx.lineTo(x + rr, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - rr);
+      ctx.lineTo(x, y + rr); ctx.quadraticCurveTo(x, y, x + rr, y); ctx.closePath();
+    }
+    function makeLabelTexture(text, options = {}) {
+      const canvas = document.createElement('canvas');
+      canvas.width = options.width || 512;
+      canvas.height = options.height || 180;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const pad = 10;
+      roundRectPath(ctx, pad, pad, canvas.width - pad * 2, canvas.height - pad * 2, options.radius || 28);
+      ctx.fillStyle = options.bg || 'rgba(6,14,27,.94)'; ctx.fill();
+      ctx.strokeStyle = options.border || 'rgba(245,158,11,.82)'; ctx.lineWidth = options.lineWidth || 6; ctx.stroke();
+      ctx.fillStyle = options.color || '#f8fafc';
+      ctx.font = `${options.weight || 800} ${options.fontSize || 70}px Inter, Arial, sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(text, canvas.width / 2, canvas.height / 2 + (options.offsetY || 2));
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.anisotropy = renderer ? Math.min(4, renderer.capabilities.getMaxAnisotropy()) : 1;
+      texture.minFilter = THREE.LinearFilter;
+      return texture;
+    }
+    function createLabelSprite(text, scaleX, scaleY, options = {}) {
+      const mat = new THREE.SpriteMaterial({ map: makeLabelTexture(text, options), transparent: true, depthTest: options.depthTest ?? false, depthWrite: false });
+      const sprite = new THREE.Sprite(mat);
+      sprite.scale.set(scaleX, scaleY, 1);
+      sprite.userData.labelKind = options.kind || 'position';
+      return sprite;
+    }
+    function createFloorDecal(text, width = 7.5, height = 1.6) {
+      const texture = makeLabelTexture(text, { width: 768, height: 150, fontSize: 52, bg: 'rgba(10,18,32,.60)', border: 'rgba(245,158,11,.22)', lineWidth: 3, color: '#d8e1ee' });
+      const mat = new THREE.MeshBasicMaterial({ map: texture, transparent: true, opacity: .72, depthWrite: false, side: THREE.DoubleSide });
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), mat);
+      mesh.rotation.x = -Math.PI / 2;
+      return mesh;
+    }
+
+    function initThreeJS() {
+      const container = $('canvas-container');
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x08111f);
+      scene.fog = new THREE.FogExp2(0x08111f, 0.0105);
+
+      camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, .1, 400);
+      camera.position.set(24, 17, 33);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+      renderer.setSize(innerWidth, innerHeight);
+      renderer.setPixelRatio(Math.min(devicePixelRatio || 1, innerWidth < 760 ? 1.25 : 1.65));
+      renderer.outputEncoding = THREE.sRGBEncoding;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.05;
+      renderer.shadowMap.enabled = innerWidth > 850;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      renderer.domElement.tabIndex = 0;
+      container.appendChild(renderer.domElement);
+
+      controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = .065;
+      controls.rotateSpeed = .62;
+      controls.zoomSpeed = .82;
+      controls.panSpeed = .58;
+      controls.minDistance = 6.5;
+      controls.maxDistance = 70;
+      controls.minPolarAngle = .12;
+      controls.maxPolarAngle = Math.PI / 2 - .025;
+      controls.target.set(0, 3.2, -4.5);
+      controls.screenSpacePanning = true;
+
+      const hemi = new THREE.HemisphereLight(0xdbeafe, 0x09101c, .92);
+      scene.add(hemi);
+      const key = new THREE.DirectionalLight(0xffffff, 1.05);
+      key.position.set(22, 31, 18);
+      key.castShadow = renderer.shadowMap.enabled;
+      if (key.castShadow) {
+        key.shadow.mapSize.set(1024, 1024);
+        key.shadow.camera.left = -30; key.shadow.camera.right = 30; key.shadow.camera.top = 30; key.shadow.camera.bottom = -30;
+      }
+      scene.add(key);
+      const fill = new THREE.DirectionalLight(0x6ba8ff, .28);
+      fill.position.set(-20, 12, -18); scene.add(fill);
+      const warm = new THREE.PointLight(0xf59e0b, .32, 45);
+      warm.position.set(0, 9, -7); scene.add(warm);
+
+      const floor = new THREE.Mesh(
+        new THREE.PlaneGeometry(90, 72),
+        new THREE.MeshStandardMaterial({ color: 0x111b2c, roughness: .96, metalness: .02 })
+      );
+      floor.rotation.x = -Math.PI / 2; floor.position.z = -4.5; floor.receiveShadow = true; scene.add(floor);
+
+      const grid = new THREE.GridHelper(90, 60, 0x35445b, 0x1b293c);
+      grid.position.set(0, .012, -4.5);
+      if (Array.isArray(grid.material)) grid.material.forEach(m => { m.opacity = .27; m.transparent = true; });
+      else { grid.material.opacity = .27; grid.material.transparent = true; }
+      scene.add(grid);
+
+      createAisles();
+      createWarehouseBoundary();
+      raycaster = new THREE.Raycaster();
+      createSelectionFrame();
+    }
+
+    function createWarehouseBoundary() {
+      const mat = new THREE.LineBasicMaterial({ color: 0x64748b, transparent: true, opacity: .22 });
+      const pts = [
+        new THREE.Vector3(-14, .03, -22.8), new THREE.Vector3(14, .03, -22.8), new THREE.Vector3(14, .03, 9.8),
+        new THREE.Vector3(-14, .03, 9.8), new THREE.Vector3(-14, .03, -22.8)
+      ];
+      scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat));
+    }
+
+    function createAisles() {
+      const lineMat = new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: .48, depthWrite: false });
+      const laneMat = new THREE.MeshBasicMaterial({ color: 0x21314a, transparent: true, opacity: .22, depthWrite: false });
+      const streetLabels = {
+        RUA1: 'RUA 1 • C / D', RUA2: 'RUA 2 • E / F', RUA3: 'RUA 3 • G / H', RUA4: 'RUA 4 • I', RUA5: 'RUA 5 • J'
+      };
+      Object.entries(STREET_CENTERS).forEach(([street, z]) => {
+        const lane = new THREE.Mesh(new THREE.PlaneGeometry(27, 3.4), laneMat);
+        lane.rotation.x = -Math.PI / 2; lane.position.set(0, .016, z); scene.add(lane);
+        [-1.68, 1.68].forEach(off => {
+          const stripe = new THREE.Mesh(new THREE.PlaneGeometry(27, .06), lineMat);
+          stripe.rotation.x = -Math.PI / 2; stripe.position.set(0, .027, z + off); scene.add(stripe);
+        });
+        const decal = createFloorDecal(streetLabels[street]);
+        decal.position.set(0, .034, z); scene.add(decal);
+      });
+    }
+
+    function createSelectionFrame() {
+      const geo = new THREE.BoxGeometry(COL_WIDTH * .93, LEVEL_HEIGHT * .91, RACK_DEPTH * 1.18);
+      const edges = new THREE.EdgesGeometry(geo);
+      const mat = new THREE.LineBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: .95, depthTest: false });
+      selectionFrame = new THREE.LineSegments(edges, mat);
+      selectionFrame.visible = false;
+      selectionFrame.renderOrder = 30;
+      scene.add(selectionFrame);
+
+      focusLabel = createLabelSprite('FOCO', 2.2, .72, { kind: 'focus', bg: 'rgba(5,21,32,.96)', border: 'rgba(34,211,238,.95)', color: '#a5f3fc', fontSize: 64 });
+      focusLabel.visible = false; focusLabel.renderOrder = 31; scene.add(focusLabel);
+    }
+
+    function generateWarehouseLayout() {
+      const uprightMat = new THREE.MeshStandardMaterial({ color: 0x314158, roughness: .52, metalness: .62 });
+      const beamMat = new THREE.MeshStandardMaterial({ color: 0xb66f08, roughness: .48, metalness: .34 });
+      const deckMat = new THREE.MeshStandardMaterial({ color: 0x26364d, roughness: .72, metalness: .36, transparent: true, opacity: .78 });
+      const bootMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: .42 });
+      const disabledMat = new THREE.MeshStandardMaterial({ color: 0x475569, transparent: true, opacity: .13, roughness: .9 });
+
+      Object.entries(CORRIDOR_CONFIGS).forEach(([corrCode, cfg]) => {
+        const xOffset = -((cfg.cols * COL_WIDTH) / 2) + COL_WIDTH / 2;
+        createRackFrame(cfg, xOffset, uprightMat, beamMat, deckMat, bootMat);
+
+        const corridorSign = createLabelSprite(cfg.name, 4.0, 1.02, { kind: 'corridor', fontSize: 60, bg: 'rgba(7,16,29,.94)', border: 'rgba(245,158,11,.52)', color: '#f8fafc' });
+        corridorSign.position.set(xOffset - COL_WIDTH * .15, RACK_LEVELS * LEVEL_HEIGHT + 1.0, cfg.z + cfg.faceDir * .72);
+        corridorSign.userData.corridor = corrCode;
+        scene.add(corridorSign); corridorLabels.push(corridorSign);
+
+        for (let col = 0; col < cfg.cols; col++) {
+          const start = col * 5 + 1;
+          const end = Math.min(start + 4, cfg.maxNum);
+          const bay = createLabelSprite(`${cfg.letter}${String(start).padStart(2,'0')}–${String(end).padStart(2,'0')}`, 1.85, .48, { kind: 'bay', fontSize: 56, bg: 'rgba(8,17,31,.91)', border: 'rgba(148,163,184,.38)', color: '#d8e2ef', lineWidth: 4 });
+          bay.position.set(xOffset + col * COL_WIDTH, RACK_LEVELS * LEVEL_HEIGHT + .35, cfg.z + cfg.faceDir * .69);
+          bay.userData.street = cfg.street;
+          scene.add(bay); bayLabels.push(bay);
         }
 
-        // Global State
-        let inventoryDB = {};
-        let heatmapMode = false;
-        let labelsVisible = true;
-        let selectedPositionKey = null;
-        let highlightedMaterialPositions = [];
+        for (let num = 1; num <= cfg.maxNum; num++) {
+          const posKey = `${corrCode}${String(num).padStart(2, '0')}`;
+          const colIndex = Math.floor((num - 1) / 5);
+          const levelIndex = ((num - 1) % 5) + 1;
+          const posX = xOffset + colIndex * COL_WIDTH;
+          const posY = (levelIndex - .5) * LEVEL_HEIGHT + .18;
+          const isDisabled = DISABLED_POSITIONS.has(posKey);
 
-        // 3D Engine Variables
-        let scene, camera, renderer, controls;
-        let rackMeshMap = {}; 
-        let positionDataMap = {}; 
-        let labelSprites = []; 
-        let raycaster = new THREE.Raycaster();
-        let mouse = new THREE.Vector2();
+          positionDataMap[posKey] = {
+            key: posKey, corridor: cfg.name, corridorCode: corrCode, street: cfg.street, col: colIndex + 1, lvl: levelIndex,
+            disabled: isDisabled, x: posX, y: posY, z: cfg.z, faceDir: cfg.faceDir, maxNum: cfg.maxNum
+          };
 
-        // Visual Constants
-        const COL_WIDTH = 2.4;
-        const LEVEL_HEIGHT = 1.35;
-        const RACK_DEPTH = 1.1;
+          const slot = new THREE.Group();
+          slot.position.set(posX, posY, cfg.z);
+          slot.userData.positionKey = posKey;
 
-        const CORRIDOR_CONFIGS = {
-            'ZC': { street: 'RUA1', name: 'Corredor C', z: -20.0, faceDir: 1,  cols: 9, maxNum: 45 },
-            'ZD': { street: 'RUA1', name: 'Corredor D', z: -14.5, faceDir: -1, cols: 9, maxNum: 45 },
-            'ZE': { street: 'RUA2', name: 'Corredor E', z: -13.0, faceDir: 1,  cols: 9, maxNum: 45 },
-            'ZF': { street: 'RUA2', name: 'Corredor F', z: -7.5,  faceDir: -1, cols: 9, maxNum: 45 },
-            'ZG': { street: 'RUA3', name: 'Corredor G', z: -6.0,  faceDir: 1,  cols: 9, maxNum: 45 },
-            'ZH': { street: 'RUA3', name: 'Corredor H', z: -0.5,  faceDir: -1, cols: 9, maxNum: 45 },
-            'ZI': { street: 'RUA4', name: 'Corredor I', z: 1.0,   faceDir: 1,  cols: 9, maxNum: 45 },
-            'ZJ': { street: 'RUA5', name: 'Corredor J', z: 6.5,   faceDir: 1,  cols: 5, maxNum: 25 }
-        };
+          if (isDisabled) {
+            const disabledBox = new THREE.Mesh(new THREE.BoxGeometry(COL_WIDTH * .84, LEVEL_HEIGHT * .82, RACK_DEPTH * .74), disabledMat);
+            slot.add(disabledBox);
+          }
 
-        const DISABLED_POSITIONS = new Set([
-            'ZD11', 'ZD12',
-            ...Array.from({length: 15}, (_, i) => `ZF${i + 31}`),
-            ...Array.from({length: 15}, (_, i) => `ZG${i + 31}`)
-        ]);
+          const label = createLabelSprite(posKey, .96, .38, { kind: 'position', fontSize: 68, bg: 'rgba(5,12,24,.96)', border: 'rgba(245,158,11,.75)', lineWidth: 5 });
+          label.position.set(0, -.05, cfg.faceDir * (RACK_DEPTH / 2 + .18));
+          label.visible = false;
+          label.userData.positionKey = posKey;
+          slot.add(label); positionLabels.push(label);
 
-        function normalizeKey(key) {
-            if (!key) return '';
-            let k = String(key).trim().toUpperCase();
-            k = k.replace(/^0+/, ''); // Remove zeros à esquerda
-            let match = k.match(/^(Z)?([C-J])0*(\d+)$/);
-            if (match) {
-                let letter = match[2];
-                let num = parseInt(match[3], 10);
-                return `Z${letter}${num < 10 ? '0' + num : num}`;
+          const hitMat = new THREE.MeshBasicMaterial({ visible: false });
+          const hit = new THREE.Mesh(new THREE.BoxGeometry(COL_WIDTH * .92, LEVEL_HEIGHT * .90, RACK_DEPTH * .94), hitMat);
+          hit.userData.positionKey = posKey;
+          slot.add(hit); clickTargets.push(hit);
+
+          scene.add(slot);
+          rackMeshMap[posKey] = slot;
+        }
+      });
+
+      updateWarehouseLoads();
+      updateLabelVisibility(true);
+    }
+
+    function createRackFrame(cfg, xOffset, uprightMat, beamMat, deckMat, bootMat) {
+      const totalH = RACK_LEVELS * LEVEL_HEIGHT + .36;
+      const postGeo = new THREE.BoxGeometry(.10, totalH, .10);
+      const bootGeo = new THREE.BoxGeometry(.19, .34, .19);
+      const beamGeo = new THREE.BoxGeometry(COL_WIDTH * .96, .11, .10);
+      const deckGeo = new THREE.BoxGeometry(COL_WIDTH * .91, .055, RACK_DEPTH * .92);
+
+      for (let c = 0; c <= cfg.cols; c++) {
+        const px = xOffset - COL_WIDTH / 2 + c * COL_WIDTH;
+        [-RACK_DEPTH / 2, RACK_DEPTH / 2].forEach(zOff => {
+          const post = new THREE.Mesh(postGeo, uprightMat);
+          post.position.set(px, totalH / 2, cfg.z + zOff); scene.add(post);
+          const boot = new THREE.Mesh(bootGeo, bootMat);
+          boot.position.set(px, .17, cfg.z + zOff); scene.add(boot);
+        });
+      }
+      for (let col = 0; col < cfg.cols; col++) {
+        const cx = xOffset + col * COL_WIDTH;
+        for (let lvl = 0; lvl <= RACK_LEVELS; lvl++) {
+          const y = .18 + lvl * LEVEL_HEIGHT;
+          [-RACK_DEPTH / 2, RACK_DEPTH / 2].forEach(zOff => {
+            const beam = new THREE.Mesh(beamGeo, beamMat);
+            beam.position.set(cx, y, cfg.z + zOff); scene.add(beam);
+          });
+          if (lvl < RACK_LEVELS) {
+            const deck = new THREE.Mesh(deckGeo, deckMat);
+            deck.position.set(cx, y + .035, cfg.z); scene.add(deck);
+          }
+        }
+      }
+    }
+
+    function buildLoadMesh(itemCount) {
+      const group = new THREE.Group();
+      group.userData.isLoadGroup = true;
+      const palletMat = new THREE.MeshStandardMaterial({ color: 0x704315, roughness: .92, metalness: 0 });
+      const pallet = new THREE.Mesh(new THREE.BoxGeometry(COL_WIDTH * .80, .12, RACK_DEPTH * .74), palletMat);
+      pallet.position.y = -LEVEL_HEIGHT * .39;
+      pallet.castShadow = renderer.shadowMap.enabled; group.add(pallet);
+
+      const count = clamp(itemCount, 1, 4);
+      const configs = count === 1
+        ? [{ x:0, y:-.08, w:1.62, h:.62, d:.74 }]
+        : count === 2
+        ? [{ x:-.43, y:-.10, w:.76, h:.58, d:.72 }, { x:.43, y:-.10, w:.76, h:.58, d:.72 }]
+        : [{ x:-.43, y:-.13, w:.76, h:.50, d:.72 }, { x:.43, y:-.13, w:.76, h:.50, d:.72 }, { x:0, y:.34, w:1.15, h:.38, d:.66 }];
+      configs.forEach((c, idx) => {
+        const mat = new THREE.MeshStandardMaterial({ color: idx === 2 ? 0xc97708 : 0xd8890b, roughness: .66, metalness: .03, transparent: true, opacity: 1, emissive: 0x000000 });
+        const box = new THREE.Mesh(new THREE.BoxGeometry(c.w, c.h, c.d), mat);
+        box.position.set(c.x, c.y - .02, 0);
+        box.castShadow = renderer.shadowMap.enabled;
+        box.userData.isCargo = true;
+        box.userData.baseColor = idx === 2 ? 0xc97708 : 0xd8890b;
+        group.add(box);
+      });
+      return group;
+    }
+
+    function updateWarehouseLoads() {
+      if (!scene || !Object.keys(rackMeshMap).length) return;
+      Object.entries(rackMeshMap).forEach(([posKey, slot]) => {
+        const old = slot.children.find(ch => ch.userData && ch.userData.isLoadGroup);
+        if (old) {
+          slot.remove(old);
+          old.traverse(ch => {
+            if (ch.geometry) ch.geometry.dispose?.();
+            if (ch.material && !Array.isArray(ch.material)) ch.material.dispose?.();
+          });
+        }
+        const info = positionDataMap[posKey];
+        if (!info || info.disabled) return;
+        const items = inventoryDB[posKey] || [];
+        if (items.length) slot.add(buildLoadMesh(items.length));
+      });
+      updateStatsUI();
+      updateVisuals();
+    }
+
+    function densityColor(count) {
+      if (count <= 1) return 0x10b981;
+      if (count <= 3) return 0xf59e0b;
+      return 0xef4444;
+    }
+    function updateVisuals() {
+      const focusActive = !!selectedPositionKey || highlightedMaterialPositions.length > 0;
+      Object.entries(rackMeshMap).forEach(([key, slot]) => {
+        const items = inventoryDB[key] || [];
+        const selected = key === selectedPositionKey;
+        const highlighted = highlightedMaterialPositions.includes(key);
+        slot.traverse(child => {
+          if (!child.userData?.isCargo || !child.material) return;
+          const mat = child.material;
+          mat.transparent = true;
+          mat.emissive.setHex(0x000000);
+          mat.opacity = 1;
+          if (selected) {
+            mat.color.setHex(0x12cfe7); mat.emissive.setHex(0x064b59); mat.emissiveIntensity = .9;
+          } else if (highlighted) {
+            mat.color.setHex(0xfbbf24); mat.emissive.setHex(0x6d4300); mat.emissiveIntensity = .75;
+          } else if (focusActive) {
+            mat.color.setHex(child.userData.baseColor || 0xd8890b); mat.opacity = .13; mat.emissiveIntensity = 0;
+          } else if (heatmapMode) {
+            mat.color.setHex(densityColor(items.length)); mat.emissiveIntensity = 0;
+          } else {
+            mat.color.setHex(child.userData.baseColor || 0xd8890b); mat.emissiveIntensity = 0;
+          }
+        });
+      });
+      updateSelectionFrame();
+      updateLabelVisibility(true);
+    }
+
+    function updateSelectionFrame() {
+      if (!selectionFrame || !selectedPositionKey || !positionDataMap[selectedPositionKey]) {
+        if (selectionFrame) selectionFrame.visible = false;
+        if (focusLabel) focusLabel.visible = false;
+        return;
+      }
+      const info = positionDataMap[selectedPositionKey];
+      selectionFrame.position.set(info.x, info.y, info.z);
+      selectionFrame.visible = true;
+      focusLabel.material.map?.dispose?.();
+      focusLabel.material.map = makeLabelTexture(selectedPositionKey, { fontSize: 68, bg: 'rgba(4,24,34,.97)', border: 'rgba(34,211,238,.96)', color: '#a5f3fc', lineWidth: 6 });
+      focusLabel.material.needsUpdate = true;
+      focusLabel.position.set(info.x, info.y + .88, info.z + info.faceDir * .92);
+      focusLabel.visible = true;
+    }
+
+    function updateLabelVisibility(force = false) {
+      if (!camera) return;
+      positionLabels.forEach(sprite => {
+        const key = sprite.userData.positionKey;
+        const slot = rackMeshMap[key];
+        if (!slot) return;
+        if (labelMode === 'off') { sprite.visible = false; return; }
+        if (labelMode === 'all') { sprite.visible = true; return; }
+        const dist = camera.position.distanceTo(slot.position);
+        const important = key === selectedPositionKey || highlightedMaterialPositions.includes(key);
+        sprite.visible = important || dist < 10.2;
+      });
+      bayLabels.forEach(sprite => {
+        if (labelMode === 'off') { sprite.visible = false; return; }
+        if (labelMode === 'all') { sprite.visible = true; return; }
+        const dist = camera.position.distanceTo(sprite.position);
+        sprite.visible = currentViewMode === 'street' || currentViewMode === 'focus' || dist < 24;
+      });
+      corridorLabels.forEach(sprite => {
+        sprite.visible = labelMode !== 'off';
+        if (labelMode === 'auto' && currentViewMode === 'focus') {
+          const corr = selectedPositionKey ? positionDataMap[selectedPositionKey]?.corridorCode : null;
+          sprite.material.opacity = sprite.userData.corridor === corr ? 1 : .26;
+        } else sprite.material.opacity = 1;
+      });
+    }
+
+    function setViewButtons(value) {
+      document.querySelectorAll('.view-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.view === value));
+    }
+    function easeInOutCubic(t) { return t < .5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3) / 2; }
+    function animateCameraTo(targetPos, targetLook, duration = 720, viewMode = null) {
+      const token = ++cameraTweenToken;
+      const startPos = camera.position.clone();
+      const startLook = controls.target.clone();
+      const endPos = new THREE.Vector3(targetPos.x, targetPos.y, targetPos.z);
+      const endLook = new THREE.Vector3(targetLook.x, targetLook.y, targetLook.z);
+      const start = performance.now();
+      if (viewMode) currentViewMode = viewMode;
+      function step(now) {
+        if (token !== cameraTweenToken) return;
+        const t = clamp((now - start) / duration, 0, 1);
+        const e = easeInOutCubic(t);
+        camera.position.lerpVectors(startPos, endPos, e);
+        controls.target.lerpVectors(startLook, endLook, e);
+        controls.update();
+        if (t < 1) requestAnimationFrame(step);
+        else updateLabelVisibility(true);
+      }
+      requestAnimationFrame(step);
+    }
+    function resetCameraView() {
+      currentStreet = null; currentViewMode = 'overview'; setViewButtons('overview');
+      animateCameraTo({ x: 23, y: 17, z: 32 }, { x: 0, y: 3.0, z: -5 }, 760, 'overview');
+      updateLabelVisibility(true);
+    }
+    function focusStreet(street) {
+      const z = STREET_CENTERS[street];
+      if (z == null) return;
+      currentStreet = street; currentViewMode = 'street'; setViewButtons(street);
+      animateCameraTo({ x: 14.5, y: 4.0, z }, { x: 0, y: 3.0, z }, 720, 'street');
+      updateLabelVisibility(true);
+    }
+    function focusTopView() {
+      currentStreet = null; currentViewMode = 'top'; setViewButtons('top');
+      animateCameraTo({ x: 0, y: 51, z: -5.0 }, { x: 0, y: 0, z: -5.1 }, 800, 'top');
+      updateLabelVisibility(true);
+    }
+    function focusPosition(posKey, duration = 680) {
+      const info = positionDataMap[posKey];
+      if (!info) return;
+      currentStreet = info.street; currentViewMode = 'focus'; setViewButtons(info.street);
+      const side = info.faceDir;
+      const z = info.z + side * 5.2;
+      const y = clamp(info.y + .35, 1.6, 7.2);
+      animateCameraTo({ x: info.x, y, z }, { x: info.x, y: info.y, z: info.z }, duration, 'focus');
+      updateLabelVisibility(true);
+    }
+
+    function getAdjacentPosition(direction) {
+      if (!selectedPositionKey) return null;
+      const info = positionDataMap[selectedPositionKey];
+      if (!info) return null;
+      const m = selectedPositionKey.match(/^(Z[C-J])(\d{2})$/);
+      if (!m) return null;
+      let n = parseInt(m[2], 10) + direction;
+      while (n >= 1 && n <= info.maxNum) {
+        const candidate = `${m[1]}${String(n).padStart(2, '0')}`;
+        if (positionDataMap[candidate] && !positionDataMap[candidate].disabled) return candidate;
+        n += direction;
+      }
+      return null;
+    }
+
+    function renderDrawer(posKey) {
+      const info = positionDataMap[posKey];
+      const items = inventoryDB[posKey] || [];
+      $('drawerBadge').textContent = info.corridorCode.slice(1);
+      $('drawerTitle').textContent = posKey;      $('drawerSubtitle').textContent = `${info.corridor} • ${info.street.replace('RUA','Rua ')}`;
+      $('drawerLocation').textContent = `${info.street.replace('RUA','Rua ')} | Coluna ${info.col}`;
+      $('drawerLevel').textContent = `Nível ${info.lvl}`;
+      $('drawerMaterialCount').textContent = `${items.length} ${items.length === 1 ? 'material' : 'materiais'}`;
+      $('drawerStatusText').textContent = info.disabled ? 'Indisponível' : (items.length ? 'Ocupado' : 'Livre');
+      $('drawerStatusText').className = info.disabled ? '' : 'status-active';
+      $('drawerFocusText').textContent = 'Foco inteligente ativo';
+      $('drawerItemList').innerHTML = items.length ? items.map(item => `
+        <article class="material-card">
+          <div class="material-top"><span class="material-code">${escapeHtml(item.code || 'SEM CÓDIGO')}</span><span class="material-qty">${formatQty(item.qty)} UN</span></div>
+          <p class="material-desc">${escapeHtml(item.desc || 'Sem descrição')}</p>
+        </article>`).join('') : '<div class="empty-state">Posição sem materiais na base atual.</div>';
+      $('prevPosBtn').disabled = !getAdjacentPosition(-1);
+      $('nextPosBtn').disabled = !getAdjacentPosition(1);
+      $('sideDrawer').classList.add('open');
+    }
+
+    function selectPosition(posKey, options = {}) {
+      const info = positionDataMap[posKey];
+      if (!info) return;
+      if (info.disabled) { showToast(`${posKey} está marcada como posição indisponível no layout.`, 'info'); return; }
+      if (!options.preserveHighlights) {
+        highlightedMaterialPositions = [];
+        $('searchResultsPanel').classList.add('hidden');
+      }
+      selectedPositionKey = posKey;
+      renderDrawer(posKey);
+      updateVisuals();
+      focusPosition(posKey, options.instant ? 0 : 680);
+    }
+    function closeDrawer(clearSelection = true) {
+      $('sideDrawer').classList.remove('open');
+      if (clearSelection) {
+        selectedPositionKey = null;
+        updateVisuals();
+      }
+    }
+
+    function performSearch() {
+      const raw = $('searchInput').value.trim();
+      if (!raw) return;
+      $('clearSearchBtn').classList.remove('hidden');
+      const address = normalizeKey(raw);
+      if (positionDataMap[address]) {
+        highlightedMaterialPositions = [];
+        $('searchResultsPanel').classList.add('hidden');
+        selectPosition(address, { preserveHighlights: true });
+        return;
+      }
+
+      const q = normalizeText(raw);
+      const grouped = new Map();
+      searchIndex.forEach(entry => {
+        if (!entry.haystack.includes(q)) return;
+        if (!grouped.has(entry.position)) grouped.set(entry.position, []);
+        grouped.get(entry.position).push(entry.item);
+      });
+      const matches = [...grouped.entries()].map(([position, items]) => ({ position, items })).sort((a,b) => a.position.localeCompare(b.position));
+      if (!matches.length) {
+        highlightedMaterialPositions = [];
+        selectedPositionKey = null;
+        updateVisuals();
+        $('searchResultsPanel').classList.add('hidden');
+        showToast(`Nenhum resultado para “${raw}”.`, 'error');
+        return;
+      }
+
+      highlightedMaterialPositions = matches.map(m => m.position);
+      const list = $('searchResultsList');
+      list.innerHTML = '';
+      matches.forEach(match => {
+        const item = match.items[0] || {};
+        const btn = document.createElement('button');
+        btn.type = 'button'; btn.className = 'result-card';
+        btn.innerHTML = `<div class="result-key">${escapeHtml(match.position)}</div><div class="result-desc">${escapeHtml(item.code || '')} • ${escapeHtml(item.desc || '')}</div><div class="result-meta">${match.items.length} ${match.items.length === 1 ? 'registro correspondente' : 'registros correspondentes'}</div>`;
+        btn.addEventListener('click', () => selectPosition(match.position, { preserveHighlights: true }));
+        list.appendChild(btn);
+      });
+      $('searchResultsCount').textContent = `${matches.length} ${matches.length === 1 ? 'posição encontrada' : 'posições encontradas'}`;
+      $('searchResultsPanel').classList.remove('hidden');
+      selectedPositionKey = matches[0].position;
+      renderDrawer(matches[0].position);
+      updateVisuals();
+      focusPosition(matches[0].position);
+      showToast(`Material localizado em ${matches.length} ${matches.length === 1 ? 'posição' : 'posições'}.`, 'success');
+    }
+
+    function clearSearch() {
+      $('searchInput').value = '';
+      $('clearSearchBtn').classList.add('hidden');
+      $('searchResultsPanel').classList.add('hidden');
+      highlightedMaterialPositions = [];
+      selectedPositionKey = null;
+      closeDrawer(false);
+      updateVisuals();
+    }
+
+    function cycleLabels() {
+      labelMode = labelMode === 'auto' ? 'all' : labelMode === 'all' ? 'off' : 'auto';
+      $('labelsBtnText').textContent = labelMode === 'auto' ? 'Rótulos: Auto' : labelMode === 'all' ? 'Rótulos: Todos' : 'Rótulos: Ocultos';
+      updateLabelVisibility(true);
+      showToast(labelMode === 'auto' ? 'Rótulos inteligentes ativados.' : labelMode === 'all' ? 'Todos os endereços visíveis.' : 'Rótulos ocultos.', 'info');
+    }
+    function toggleHeatmap() {
+      heatmapMode = !heatmapMode;
+      $('heatmapBtnText').textContent = heatmapMode ? 'Cores Normais' : 'Modo Calor';
+      updateVisuals();
+      showToast(heatmapMode ? 'Mapa de densidade ativado.' : 'Visualização de estoque restaurada.', 'info');
+    }
+
+    function updateStatsUI() {
+      const activeKeys = Object.keys(positionDataMap).filter(k => !positionDataMap[k].disabled);
+      const occupied = activeKeys.filter(k => (inventoryDB[k] || []).length > 0).length;
+      const pct = activeKeys.length ? Math.round((occupied / activeKeys.length) * 100) : 0;
+      $('statTotalPositions').textContent = Object.keys(positionDataMap).length || '—';
+      $('statOccupiedPositions').textContent = occupied;
+      $('statOccupancy').textContent = `${pct}%`;
+    }
+
+    function raycastPosition(event) {
+      const rect = renderer.domElement.getBoundingClientRect();
+      const mouse = new THREE.Vector2(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1
+      );
+      raycaster.setFromCamera(mouse, camera);
+      const hits = raycaster.intersectObjects(clickTargets, false);
+      return hits.length ? hits[0].object.userData.positionKey : null;
+    }
+    function updateTooltip(event, key) {
+      const tt = $('tooltip');
+      if (!key) { tt.classList.add('hidden'); renderer.domElement.style.cursor = 'grab'; return; }
+      const info = positionDataMap[key];
+      const items = inventoryDB[key] || [];
+      $('ttPosName').textContent = key;
+      $('ttCorredor').textContent = info.corridor;
+      $('ttItemCount').textContent = `${items.length}`;
+      $('ttStatus').textContent = info.disabled ? 'Indisponível' : items.length ? 'Ocupado' : 'Livre';
+      tt.classList.remove('hidden');
+      const x = clamp(event.clientX + 14, 10, innerWidth - 270);
+      const y = clamp(event.clientY + 14, 10, innerHeight - 120);
+      tt.style.left = `${x}px`; tt.style.top = `${y}px`;
+      renderer.domElement.style.cursor = 'pointer';
+    }
+
+    function setupEvents() {
+      addEventListener('resize', () => {
+        camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+        renderer.setSize(innerWidth, innerHeight);
+        renderer.setPixelRatio(Math.min(devicePixelRatio || 1, innerWidth < 760 ? 1.25 : 1.65));
+      });
+
+      renderer.domElement.addEventListener('pointerdown', e => {
+        pointerStart = { x: e.clientX, y: e.clientY };
+        $('controlHint').classList.add('hide');
+      });
+      renderer.domElement.addEventListener('pointermove', e => {
+        if (e.pointerType && e.pointerType !== 'mouse') return;
+        updateTooltip(e, raycastPosition(e));
+      });
+      renderer.domElement.addEventListener('pointerleave', () => $('tooltip').classList.add('hidden'));
+      renderer.domElement.addEventListener('pointerup', e => {
+        if (!pointerStart) return;
+        const moved = Math.hypot(e.clientX - pointerStart.x, e.clientY - pointerStart.y);
+        pointerStart = null;
+        if (moved > 6) return;
+        const key = raycastPosition(e);
+        if (key) selectPosition(key);
+      });
+
+      $('searchBtn').addEventListener('click', performSearch);
+      $('searchInput').addEventListener('keydown', e => { if (e.key === 'Enter') performSearch(); });
+      $('clearSearchBtn').addEventListener('click', clearSearch);
+      $('toggleLabelsBtn').addEventListener('click', cycleLabels);
+      $('toggleHeatmapBtn').addEventListener('click', toggleHeatmap);
+      $('closeDrawerBtn').addEventListener('click', () => closeDrawer(true));
+      $('closeResultsBtn').addEventListener('click', () => $('searchResultsPanel').classList.add('hidden'));
+      $('centerPosBtn').addEventListener('click', () => selectedPositionKey && focusPosition(selectedPositionKey));
+      $('prevPosBtn').addEventListener('click', () => { const p = getAdjacentPosition(-1); if (p) selectPosition(p, { preserveHighlights: highlightedMaterialPositions.length > 0 }); });
+      $('nextPosBtn').addEventListener('click', () => { const p = getAdjacentPosition(1); if (p) selectPosition(p, { preserveHighlights: highlightedMaterialPositions.length > 0 }); });
+
+      document.querySelectorAll('.view-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const v = btn.dataset.view;
+          if (v === 'overview') resetCameraView();
+          else if (v === 'top') focusTopView();
+          else focusStreet(v);
+        });
+      });
+
+      $('uploadExcelBtn').addEventListener('click', () => $('uploadModal').classList.remove('hidden'));
+      $('closeModalBtn').addEventListener('click', () => $('uploadModal').classList.add('hidden'));
+      $('uploadModal').addEventListener('click', e => { if (e.target === $('uploadModal')) $('uploadModal').classList.add('hidden'); });
+      const dz = $('dropZone'); const input = $('excelFileInput');
+      const openPicker = () => input.click();
+      dz.addEventListener('click', openPicker);
+      dz.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPicker(); } });
+      dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag'); });
+      dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+      dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('drag'); if (e.dataTransfer.files[0]) handleExcelFile(e.dataTransfer.files[0]); });
+      input.addEventListener('change', e => { if (e.target.files[0]) handleExcelFile(e.target.files[0]); });
+
+      document.addEventListener('keydown', e => {
+        if (e.key === '/' && !['INPUT','TEXTAREA'].includes(document.activeElement?.tagName)) { e.preventDefault(); $('searchInput').focus(); }
+        if (e.key === 'Escape') {
+          if (!$('uploadModal').classList.contains('hidden')) $('uploadModal').classList.add('hidden');
+          else if ($('sideDrawer').classList.contains('open')) closeDrawer(true);
+          else clearSearch();
+        }
+      });
+      setTimeout(() => $('controlHint').classList.add('hide'), 7000);
+    }
+
+    async function handleExcelFile(file) {
+      const adminKey = $('adminKeyInput').value.trim();
+      if (!adminKey) { showToast('Digite a chave de atualização antes de publicar.', 'error'); return; }
+      if (!/\.(xlsx|xls|csv)$/i.test(file.name)) { showToast('Selecione uma planilha .xlsx, .xls ou .csv.', 'error'); return; }
+
+      try {
+        const buffer = await file.arrayBuffer();
+        const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+        const newDB = {};
+        let importedCount = 0;
+
+        rows.forEach(row => {
+          let rawPos = null;
+          const preferred = ['Posição', 'Posicao', 'POSICAO', 'Posição SAP', 'Endereço', 'Endereco', 'Pos. depósito', 'Pos.depósito', 'BIN', 'Storage Bin'];
+          for (const name of preferred) {
+            if (row[name] !== undefined && String(row[name]).trim() !== '') { rawPos = row[name]; break; }
+          }
+          if (!rawPos) {
+            for (const key of Object.keys(row)) {
+              const clean = normalizeText(key);
+              if ((clean.includes('posic') || clean.includes('enderec') || clean.includes('bin') || clean.includes('localiz')) && !clean.includes('deposito') && !clean.includes('centro') && !clean.includes('tipo') && !clean.includes('status')) {
+                rawPos = row[key]; break;
+              }
             }
-            return k;
-        }
-
-        function createTextSprite(text) {
-            const canvas = document.createElement('canvas');
-            canvas.width = 256;
-            canvas.height = 128;
-            const ctx = canvas.getContext('2d');
-
-            ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
-            ctx.beginPath();
-            ctx.roundRect(10, 10, 236, 108, 20);
-            ctx.fill();
-
-            ctx.strokeStyle = '#f59e0b';
-            ctx.lineWidth = 6;
-            ctx.stroke();
-
-            ctx.font = 'bold 52px Inter, sans-serif';
-            ctx.fillStyle = '#f8fafc';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(text, 128, 64);
-
-            const texture = new THREE.CanvasTexture(canvas);
-            const material = new THREE.SpriteMaterial({ map: texture, depthTest: false });
-            const sprite = new THREE.Sprite(material);
-            sprite.scale.set(1.5, 0.75, 1);
-            return sprite;
-        }
-
-        const CACHE_KEY = 'inbound-map-cache-v1';
-        let currentVersion = null;
-        let currentLastUpdated = null;
-
-        function updateSyncUI(status, text) {
-            const dot = document.getElementById('syncDot');
-            const label = document.getElementById('syncText');
-            dot.classList.remove('online', 'offline');
-            if (status === 'online') dot.classList.add('online');
-            if (status === 'offline') dot.classList.add('offline');
-            label.innerText = text;
-        }
-
-        function updateLastUpdateUI(iso) {
-            const el = document.getElementById('lastUpdateText');
-            if (!iso) { el.innerText = 'Última atualização: base ainda não publicada'; return; }
-            const d = new Date(iso);
-            el.innerText = `Última atualização: ${d.toLocaleString('pt-BR')}`;
-        }
-
-        function loadCachedInventory() {
-            try {
-                const cached = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
-                if (!cached || !cached.inventory) return false;
-                inventoryDB = cached.inventory;
-                currentVersion = cached.version || null;
-                currentLastUpdated = cached.lastUpdated || null;
-                updateWarehouseBoxes();
-                updateLastUpdateUI(currentLastUpdated);
-                updateSyncUI('offline', 'Cache local');
-                return true;
-            } catch { return false; }
-        }
-
-        function saveCache(payload) {
-            try {
-                localStorage.setItem(CACHE_KEY, JSON.stringify({
-                    version: payload.version,
-                    lastUpdated: payload.lastUpdated,
-                    inventory: payload.inventory
-                }));
-            } catch {}
-        }
-
-        async function syncInventory(force = false) {
-            updateSyncUI('', 'Sincronizando…');
-            try {
-                const headers = {};
-                if (!force && currentVersion) headers['If-None-Match'] = `W/"${currentVersion}"`;
-                const response = await fetch('/api/inventory', { headers, cache: 'no-store' });
-                if (response.status === 304) {
-                    updateSyncUI('online', 'Sincronizado');
-                    updateLastUpdateUI(currentLastUpdated);
-                    return;
-                }
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                const payload = await response.json();
-                inventoryDB = payload.inventory || {};
-                currentVersion = payload.version || null;
-                currentLastUpdated = payload.lastUpdated || null;
-                saveCache(payload);
-                updateWarehouseBoxes();
-                updateLastUpdateUI(currentLastUpdated);
-                updateSyncUI('online', 'Sincronizado');
-            } catch (error) {
-                updateSyncUI('offline', 'Offline / cache');
-                showToast('Não foi possível atualizar a base online. Usando a última cópia disponível.', 'error');
-            }
-        }
-
-        async function initApp() {
-            initThreeJS();
-            generateWarehouseLayout();
-            setupEventListeners();
-            animate();
-            loadCachedInventory();
-            updateStatsUI();
-            await syncInventory();
-        }
-
-        function initThreeJS() {
-            const container = document.getElementById('canvas-container');
-            
-            scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x0f172a);
-            scene.fog = new THREE.FogExp2(0x0f172a, 0.012);
-
-            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.set(22, 18, 32);
-
-            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio, window.innerWidth < 768 ? 1.25 : 1.75));
-            renderer.shadowMap.enabled = true;
-            container.appendChild(renderer.domElement);
-
-            controls = new THREE.OrbitControls(camera, renderer.domElement);
-            controls.enableDamping = true;
-            controls.dampingFactor = 0.05;
-            controls.maxPolarAngle = Math.PI / 2 - 0.02; 
-            controls.target.set(0, 3, -2);
-
-            scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-            dirLight.position.set(30, 40, 20);
-            dirLight.castShadow = true;
-            scene.add(dirLight);
-
-            const floor = new THREE.Mesh(
-                new THREE.PlaneGeometry(120, 120),
-                new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.8 })
-            );
-            floor.rotation.x = -Math.PI / 2;
-            floor.receiveShadow = true;
-            scene.add(floor);
-
-            const grid = new THREE.GridHelper(120, 60, 0x334155, 0x1e293b);
-            grid.position.y = 0.01;
-            scene.add(grid);
-
-            createSafetyLines();
-        }
-
-        function createSafetyLines() {
-            const lineMat = new THREE.MeshBasicMaterial({ color: 0xeab308, opacity: 0.6, transparent: true });
-            const streetCenters = [-17.25, -10.25, -3.25, 3.75];
-
-            streetCenters.forEach(zPos => {
-                const s1 = new THREE.Mesh(new THREE.PlaneGeometry(28, 0.15), lineMat);
-                s1.rotation.x = -Math.PI / 2; s1.position.set(0, 0.02, zPos - 1.5);
-                scene.add(s1);
-                
-                const s2 = s1.clone(); s2.position.z = zPos + 1.5;
-                scene.add(s2);
-            });
-        }
-
-        function generateWarehouseLayout() {
-            const frameMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.5, metalness: 0.7 });
-            const bootMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.3 });
-            const disabledMat = new THREE.MeshStandardMaterial({ color: 0x475569, transparent: true, opacity: 0.2 });
-
-            Object.keys(CORRIDOR_CONFIGS).forEach(corrCode => {
-                const cfg = CORRIDOR_CONFIGS[corrCode];
-                const xOffset = - ((cfg.cols * COL_WIDTH) / 2) + (COL_WIDTH / 2);
-
-                for (let num = 1; num <= cfg.maxNum; num++) {
-                    const posKey = `${corrCode}${num < 10 ? '0' + num : num}`;
-                    const colIndex = Math.floor((num - 1) / 5);
-                    const levelIndex = ((num - 1) % 5) + 1;
-
-                    const posX = xOffset + (colIndex * COL_WIDTH);
-                    const posY = (levelIndex - 0.5) * LEVEL_HEIGHT + 0.2;
-                    const posZ = cfg.z;
-                    const isDisabled = DISABLED_POSITIONS.has(posKey);
-
-                    positionDataMap[posKey] = { key: posKey, corridor: cfg.name, street: cfg.street, col: colIndex+1, lvl: levelIndex, disabled: isDisabled, x: posX, y: posY, z: posZ };
-
-                    let slotGroup = new THREE.Group();
-                    slotGroup.position.set(posX, posY, posZ);
-
-                    if (isDisabled) {
-                        slotGroup.add(new THREE.Mesh(new THREE.BoxGeometry(COL_WIDTH*0.8, LEVEL_HEIGHT*0.8, RACK_DEPTH*0.8), disabledMat));
-                    } else {
-                        const items = inventoryDB[posKey] || [];
-                        if (items.length > 0) {
-                            const boxGroup = buildBoxMesh(items.length);
-                            boxGroup.userData = { isBoxGroup: true };
-                            slotGroup.add(boxGroup);
-                        }
-
-                        const sprite = createTextSprite(posKey);
-                        sprite.position.set(0, -0.2, (RACK_DEPTH / 2 + 0.3) * cfg.faceDir);
-                        sprite.visible = labelsVisible;
-                        labelSprites.push(sprite);
-                        slotGroup.add(sprite);
-                    }
-
-                    const hitBox = new THREE.Mesh(new THREE.BoxGeometry(COL_WIDTH*0.9, LEVEL_HEIGHT*0.9, RACK_DEPTH*0.9), new THREE.MeshBasicMaterial({visible: false}));
-                    hitBox.userData = { positionKey: posKey };
-                    slotGroup.add(hitBox);
-                    
-                    scene.add(slotGroup);
-                    rackMeshMap[posKey] = slotGroup;
-                }
-                
-                createFrames(cfg, xOffset, frameMat, bootMat);
-            });
-        }
-
-        function buildBoxMesh(itemCount) {
-            const group = new THREE.Group();
-            
-            const pallet = new THREE.Mesh(new THREE.BoxGeometry(COL_WIDTH*0.85, 0.12, RACK_DEPTH*0.85), new THREE.MeshStandardMaterial({color: 0x78350f, roughness: 0.9}));
-            pallet.position.y = -LEVEL_HEIGHT * 0.38;
-            group.add(pallet);
-
-            const boxMat = new THREE.MeshStandardMaterial({color: 0xd97706, roughness: 0.8});
-            const height = Math.min(0.65, 0.2 + (itemCount * 0.1));
-            const box = new THREE.Mesh(new THREE.BoxGeometry(COL_WIDTH*0.75, LEVEL_HEIGHT*height, RACK_DEPTH*0.75), boxMat);
-            box.position.y = (LEVEL_HEIGHT*height)/2 - LEVEL_HEIGHT * 0.32;
-            
-            const sticker = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.2), new THREE.MeshBasicMaterial({color: 0xffffff}));
-            sticker.position.set(0, 0, (RACK_DEPTH*0.75)/2 + 0.01);
-            box.add(sticker);
-            
-            box.userData.isBox = true; 
-            group.add(box);
-
-            return group;
-        }
-
-        function createFrames(cfg, xOffset, frameMat, bootMat) {
-            const rackHeight = 5 * LEVEL_HEIGHT + 0.4;
-            const postGeo = new THREE.BoxGeometry(0.08, rackHeight, 0.08);
-            for (let c = 0; c <= cfg.cols; c++) {
-                const px = xOffset - (COL_WIDTH / 2) + (c * COL_WIDTH);
-                [-RACK_DEPTH/2, RACK_DEPTH/2].forEach(zOffset => {
-                    const post = new THREE.Mesh(postGeo, frameMat);
-                    post.position.set(px, rackHeight / 2, cfg.z + zOffset);
-                    scene.add(post);
-
-                    const boot = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.4, 0.16), bootMat);
-                    boot.position.set(px, 0.2, cfg.z + zOffset);
-                    scene.add(boot);
-                });
-            }
-        }
-
-        function setupEventListeners() {
-            window.addEventListener('resize', () => {
-                camera.aspect = window.innerWidth / window.innerHeight;
-                camera.updateProjectionMatrix();
-                renderer.setSize(window.innerWidth, window.innerHeight);
-            });
-
-            const updatePointer = (e) => {
-                mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-                mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
-            };
-
-            window.addEventListener('pointermove', (e) => {
-                updatePointer(e);
-                raycaster.setFromCamera(mouse, camera);
-                const intersects = raycaster.intersectObjects(scene.children, true);
-
-                let foundKey = null;
-                for (let int of intersects) {
-                    if (int.object.userData.positionKey) {
-                        foundKey = int.object.userData.positionKey; break;
-                    }
-                }
-
-                const tt = document.getElementById('tooltip');
-                if (foundKey) {
-                    const info = positionDataMap[foundKey];
-                    const items = inventoryDB[foundKey] || [];
-                    document.getElementById('ttPosName').innerText = foundKey;
-                    document.getElementById('ttCorredor').innerText = `${info.corridor}`;
-                    document.getElementById('ttItemCount').innerText = `${items.length} itens`;
-                    
-                    tt.style.display = 'block';
-                    tt.style.left = (e.clientX + 15) + 'px';
-                    tt.style.top = (e.clientY + 15) + 'px';
-                    document.body.style.cursor = 'pointer';
-                } else {
-                    tt.style.display = 'none';
-                    document.body.style.cursor = 'default';
-                }
-            });
-
-            window.addEventListener('click', (e) => {
-                if (e.target.closest('header, aside, #searchResultsPanel, .glass')) return;
-                updatePointer(e);
-                raycaster.setFromCamera(mouse, camera);
-                const intersects = raycaster.intersectObjects(scene.children, true);
-                for (let int of intersects) {
-                    if (int.object.userData.positionKey) {
-                        selectPosition(int.object.userData.positionKey);
-                        break;
-                    }
-                }
-            });
-
-            document.getElementById('searchBtn').addEventListener('click', performSearch);
-            document.getElementById('searchInput').addEventListener('keyup', (e) => { if (e.key === 'Enter') performSearch(); });
-            document.getElementById('clearSearchBtn').addEventListener('click', clearSearch);
-            document.getElementById('closeDrawerBtn').addEventListener('click', () => document.getElementById('sideDrawer').classList.remove('is-open'));
-            document.getElementById('closeResultsBtn').addEventListener('click', () => document.getElementById('searchResultsPanel').classList.add('hidden'));
-            
-            document.getElementById('toggleHeatmapBtn').addEventListener('click', toggleHeatmap);
-            document.getElementById('toggleLabelsBtn').addEventListener('click', toggleLabels);
-            
-            document.getElementById('uploadExcelBtn').addEventListener('click', () => document.getElementById('uploadModal').classList.remove('hidden'));
-            document.getElementById('closeModalBtn').addEventListener('click', () => document.getElementById('uploadModal').classList.add('hidden'));
-
-            const dropZone = document.getElementById('dropZone');
-            const fileInput = document.getElementById('excelFileInput');
-
-            dropZone.addEventListener('click', () => fileInput.click());
-            dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('border-emerald-500'); });
-            dropZone.addEventListener('dragleave', () => dropZone.classList.remove('border-emerald-500'));
-            dropZone.addEventListener('drop', (e) => {
-                e.preventDefault();
-                dropZone.classList.remove('border-emerald-500');
-                if (e.dataTransfer.files.length) handleExcelFile(e.dataTransfer.files[0]);
-            });
-            fileInput.addEventListener('change', (e) => {
-                if (e.target.files.length) handleExcelFile(e.target.files[0]);
-            });
-        }
-
-        // Função para recriar as caixas 3D nos porta-paletes do mapa
-        function updateWarehouseBoxes() {
-            Object.keys(positionDataMap).forEach(posKey => {
-                const info = positionDataMap[posKey];
-                if (info.disabled) return;
-
-                const slotGroup = rackMeshMap[posKey];
-                if (!slotGroup) return;
-
-                let existingBoxGroup = null;
-                slotGroup.children.forEach(child => {
-                    if (child.userData && child.userData.isBoxGroup) {
-                        existingBoxGroup = child;
-                    }
-                });
-
-                if (existingBoxGroup) {
-                    slotGroup.remove(existingBoxGroup);
-                }
-
-                const items = inventoryDB[posKey] || [];
-                if (items.length > 0) {
-                    const newBoxGroup = buildBoxMesh(items.length);
-                    newBoxGroup.userData = { isBoxGroup: true };
-                    slotGroup.add(newBoxGroup);
-                }
-            });
-
-            updateStatsUI();
-            resetColors();
-        }
-
-        function handleExcelFile(file) {
-            const adminKey = document.getElementById('adminKeyInput').value.trim();
-            if (!adminKey) {
-                showToast('Digite a chave de atualização antes de importar.', 'error');
-                return;
-            }
-
-            const reader = new FileReader();
-            reader.onload = async function(e) {
-                try {
-                    const data = new Uint8Array(e.target.result);
-                    const workbook = XLSX.read(data, { type: 'array' });
-                    const firstSheetName = workbook.SheetNames[0];
-                    const worksheet = workbook.Sheets[firstSheetName];
-                    const jsonRows = XLSX.utils.sheet_to_json(worksheet);
-
-                    const newDB = {};
-                    let importedCount = 0;
-
-                    jsonRows.forEach(row => {
-                        let rawPos = null;
-                        const posColNames = ['Posição', 'Posicao', 'POSICAO', 'Posição SAP', 'Endereço', 'Endereco', 'Pos. depósito', 'Pos.depósito', 'BIN', 'Storage Bin'];
-                        for (let pName of posColNames) {
-                            if (row[pName] !== undefined && row[pName] !== null && String(row[pName]).trim() !== '') {
-                                rawPos = row[pName];
-                                break;
-                            }
-                        }
-
-                        if (!rawPos) {
-                            for (let key in row) {
-                                let kClean = key.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-                                if ((kClean.includes('posic') || kClean.includes('enderec') || kClean.includes('bin') || kClean.includes('localiz'))
-                                    && !kClean.includes('deposito') && !kClean.includes('centro') && !kClean.includes('tipo') && !kClean.includes('status')) {
-                                    rawPos = row[key];
-                                    break;
-                                }
-                            }
-                        }
-
-                        if (!rawPos) return;
-                        const normPos = normalizeKey(rawPos);
-                        if (!normPos || !positionDataMap[normPos] || positionDataMap[normPos].disabled) return;
-                        if (!newDB[normPos]) newDB[normPos] = [];
-
-                        const code = row['Material'] || row['Código'] || row['Codigo'] || row['Cod'] || '';
-                        const desc = row['Descrição'] || row['Descricao'] || row['DESC'] || row['Material Desc'] || '';
-                        const qtyRaw = row['Qtde total'] ?? row['Qtde'] ?? row['Quantidade'] ?? row['Qtd'] ?? row['QTDE'] ?? 0;
-                        const qtyParsed = Number(String(qtyRaw).replace(',', '.'));
-                        const qty = Number.isFinite(qtyParsed) ? Math.abs(qtyParsed) : 0;
-
-                        if (!String(code).trim() && !String(desc).trim()) return;
-                        newDB[normPos].push({ code: String(code).trim(), desc: String(desc).trim(), qty });
-                        importedCount++;
-                    });
-
-                    if (!importedCount) throw new Error('Nenhum registro válido foi encontrado para as posições do mapa.');
-                    showToast(`Validado: ${importedCount} registros. Salvando para todos…`, 'info');
-
-                    const response = await fetch('/api/import', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'X-Admin-Key': adminKey },
-                        body: JSON.stringify({ filename: file.name, inventory: newDB })
-                    });
-                    const result = await response.json().catch(() => ({}));
-                    if (!response.ok || !result.ok) throw new Error(result.error || `Falha HTTP ${response.status}`);
-
-                    inventoryDB = newDB;
-                    currentVersion = result.version;
-                    currentLastUpdated = result.lastUpdated;
-                    saveCache({ version: currentVersion, lastUpdated: currentLastUpdated, inventory: inventoryDB });
-                    updateWarehouseBoxes();
-                    updateLastUpdateUI(currentLastUpdated);
-                    updateSyncUI('online', 'Sincronizado');
-                    document.getElementById('uploadModal').classList.add('hidden');
-                    document.getElementById('excelFileInput').value = '';
-                    document.getElementById('adminKeyInput').value = '';
-                    showToast(`Base publicada! ${importedCount} registros em ${Object.keys(newDB).length} posições.`, 'success');
-                } catch (error) {
-                    showToast(error.message || 'Falha ao importar a planilha.', 'error');
-                }
-            };
-            reader.readAsArrayBuffer(file);
-        }
-
-        function selectPosition(posKey) {
-            const info = positionDataMap[posKey];
-            if (!info) return;
-
-            selectedPositionKey = posKey;
-            
-            const tx = info.x + (info.x > 0 ? 4 : -4);
-            gsapAnimateCamera({ x: tx, y: info.y + 2, z: info.z + 5 }, { x: info.x, y: info.y, z: info.z });
-            
-            const items = inventoryDB[posKey] || [];
-            document.getElementById('drawerBadge').innerText = posKey.substring(0, 2);
-            document.getElementById('drawerTitle').innerText = posKey;
-            document.getElementById('drawerSubtitle').innerText = info.corridor;
-            document.getElementById('drawerLocation').innerText = `${info.street} | Col ${info.col}`;
-            document.getElementById('drawerLevel').innerText = `Nível ${info.lvl}`;
-            document.getElementById('drawerMaterialCount').innerText = `${items.length} materiais`;
-
-            const list = document.getElementById('drawerItemList');
-            list.innerHTML = items.length ? items.map(i => `
-                <div class="p-3 bg-slate-900/80 rounded-xl border border-slate-700/60 text-xs">
-                    <div class="flex justify-between font-bold text-amber-400"><span>${i.code}</span><span class="text-emerald-400">${i.qty} UN</span></div>
-                    <p class="text-slate-300 truncate">${i.desc}</p>
-                </div>`).join('') : '<p class="text-xs text-slate-500 p-4 text-center">Posição Vazia</p>';
-
-            document.getElementById('sideDrawer').classList.add('is-open');
-            resetColors();
-        }
-
-        function performSearch() {
-            const query = document.getElementById('searchInput').value.trim();
-            if (!query) return;
-            document.getElementById('clearSearchBtn').classList.remove('hidden');
-
-            const normKey = normalizeKey(query);
-            if (positionDataMap[normKey]) {
-                document.getElementById('searchResultsPanel').classList.add('hidden');
-                selectPosition(normKey);
-                return;
-            }
-
-            const q = query.toLowerCase();
-            const matches = [];
-            Object.keys(inventoryDB).forEach(pk => {
-                const items = inventoryDB[pk];
-                const found = items.filter(it => it.code.toLowerCase().includes(q) || it.desc.toLowerCase().includes(q));
-                if (found.length) matches.push({ posKey: pk, items: found });
-            });
-
-            if (matches.length) {
-                highlightedMaterialPositions = matches.map(m => m.posKey);
-                selectPosition(matches[0].posKey);
-                
-                const list = document.getElementById('searchResultsList');
-                list.innerHTML = matches.map(m => `
-                    <div onclick="selectPosition('${m.posKey}')" class="p-2 bg-slate-800 rounded-lg border border-slate-700 cursor-pointer hover:border-amber-500 mb-1 text-xs">
-                        <span class="font-bold text-amber-400 block">${m.posKey}</span>
-                        <span class="text-slate-300 truncate block">${m.items[0].desc}</span>
-                    </div>`).join('');
-                document.getElementById('searchResultsCount').innerText = `${matches.length} posições`;
-                document.getElementById('searchResultsPanel').classList.remove('hidden');
-                showToast(`Encontrado em ${matches.length} posições.`, 'success');
-            } else {
-                showToast(`Nenhum resultado para "${query}"`, 'error');
-            }
-            resetColors();
-        }
-
-        function clearSearch() {
-            document.getElementById('searchInput').value = '';
-            document.getElementById('clearSearchBtn').classList.add('hidden');
-            document.getElementById('searchResultsPanel').classList.add('hidden');
-            highlightedMaterialPositions = [];
-            selectedPositionKey = null;
-            resetColors();
-            showToast('Busca limpa.', 'info');
-        }
-
-        function resetColors() {
-            Object.keys(rackMeshMap).forEach(key => {
-                if (positionDataMap[key].disabled) return;
-                
-                const group = rackMeshMap[key];
-                const isSelected = selectedPositionKey === key;
-                const isHighlighted = highlightedMaterialPositions.includes(key);
-                const count = (inventoryDB[key] || []).length;
-
-                group.traverse((child) => {
-                    if (child.userData.isBox && child.material) {
-                        if (isSelected) child.material.color.setHex(0x00f0ff);
-                        else if (isHighlighted) child.material.color.setHex(0xf59e0b);
-                        else if (heatmapMode) {
-                            if (count < 2) child.material.color.setHex(0x10b981);
-                            else if (count < 4) child.material.color.setHex(0xf59e0b);
-                            else child.material.color.setHex(0xef4444);
-                        }
-                        else child.material.color.setHex(0xd97706);
-                    }
-                });
-            });
-        }
-
-        function toggleHeatmap() {
-            heatmapMode = !heatmapMode;
-            document.getElementById('heatmapBtnText').innerText = heatmapMode ? 'Normal' : 'Modo Calor';
-            resetColors();
-            showToast(heatmapMode ? 'Modo de densidade (Calor) ativado.' : 'Visualização normal restaurada.');
-        }
-
-        function toggleLabels() {
-            labelsVisible = !labelsVisible;
-            document.getElementById('labelsBtnText').innerText = labelsVisible ? 'Ocultar Rótulos' : 'Mostrar Rótulos';
-            labelSprites.forEach(s => s.visible = labelsVisible);
-            showToast(labelsVisible ? 'Rótulos visíveis.' : 'Rótulos ocultos.');
-        }
-
-        function gsapAnimateCamera(tPos, tLook) {
-            const sPos = { x: camera.position.x, y: camera.position.y, z: camera.position.z };
-            const sLook = { x: controls.target.x, y: controls.target.y, z: controls.target.z };
-            let p = 0;
-            function step() {
-                p += 0.05;
-                if (p <= 1) {
-                    camera.position.set(sPos.x + (tPos.x - sPos.x)*p, sPos.y + (tPos.y - sPos.y)*p, sPos.z + (tPos.z - sPos.z)*p);
-                    controls.target.set(sLook.x + (tLook.x - sLook.x)*p, sLook.y + (tLook.y - sLook.y)*p, sLook.z + (tLook.z - sLook.z)*p);
-                    requestAnimationFrame(step);
-                }
-            }
-            step();
-        }
-
-        function resetCameraView() { gsapAnimateCamera({ x: 22, y: 18, z: 32 }, { x: 0, y: 3, z: -2 }); }
-        function focusStreet(s) {
-            const t = {
-                'RUA1': { pos: { x: 0, y: 8, z: -17.25 + 10 }, look: { x: 0, y: 3, z: -17.25 } },
-                'RUA2': { pos: { x: 0, y: 8, z: -10.25 + 10 }, look: { x: 0, y: 3, z: -10.25 } },
-                'RUA3': { pos: { x: 0, y: 8, z: -3.25 + 10 }, look: { x: 0, y: 3, z: -3.25 } },
-                'RUA4': { pos: { x: 0, y: 8, z: 3.75 + 10 }, look: { x: 0, y: 3, z: 3.75 } },
-                'RUA5': { pos: { x: 0, y: 8, z: 6.5 + 10 }, look: { x: 0, y: 3, z: 6.5 } }
-            };
-            if(t[s]) gsapAnimateCamera(t[s].pos, t[s].look);
-        }
-        function focusTopView() { gsapAnimateCamera({ x: 0, y: 55, z: 0 }, { x: 0, y: 0, z: 0 }); }
-
-        function animate() {
-            requestAnimationFrame(animate);
-            controls.update();
-            renderer.render(scene, camera);
-        }
-
-        function updateStatsUI() {
-            const keys = Object.keys(inventoryDB).filter(k => inventoryDB[k] && inventoryDB[k].length > 0);
-            document.getElementById('statTotalPositions').innerText = Object.keys(positionDataMap).length;
-            document.getElementById('statOccupiedPositions').innerText = keys.length;
-        }
-
-        window.addEventListener('DOMContentLoaded', initApp);
-    </script>
+          }
+          if (!rawPos) return;
+          const pos = normalizeKey(rawPos);
+          if (!positionDataMap[pos] || positionDataMap[pos].disabled) return;
+          const code = row['Material'] || row['Código'] || row['Codigo'] || row['Cod'] || '';
+          const desc = row['Descrição'] || row['Descricao'] || row['DESC'] || row['Material Desc'] || '';
+          const qtyRaw = row['Qtde total'] ?? row['Qtde'] ?? row['Quantidade'] ?? row['Qtd'] ?? row['QTDE'] ?? 0;
+          if (!String(code).trim() && !String(desc).trim()) return;
+          if (!newDB[pos]) newDB[pos] = [];
+          newDB[pos].push({ code: String(code).trim(), desc: String(desc).trim(), qty: parseQty(qtyRaw) });
+          importedCount++;
+        });
+
+        if (!importedCount) throw new Error('Nenhum registro válido foi encontrado nas posições mapeadas.');
+        showToast(`Validado: ${importedCount} registros. Publicando a nova base…`, 'info');
+        const response = await fetch('/api/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Admin-Key': adminKey },
+          body: JSON.stringify({ filename: file.name, inventory: newDB })
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result.ok) throw new Error(result.error || `Falha HTTP ${response.status}`);
+
+        inventoryDB = newDB;
+        currentVersion = result.version;
+        currentLastUpdated = result.lastUpdated;
+        rebuildSearchIndex();
+        saveCache({ version: currentVersion, lastUpdated: currentLastUpdated, inventory: inventoryDB });
+        updateWarehouseLoads();
+        updateLastUpdateUI(currentLastUpdated);
+        updateSyncUI('online', 'Sincronizado');
+        $('uploadModal').classList.add('hidden');
+        $('excelFileInput').value = '';
+        $('adminKeyInput').value = '';
+        showToast(`Base publicada: ${importedCount} registros em ${Object.keys(newDB).length} posições.`, 'success');
+      } catch (error) {
+        showToast(error?.message || 'Falha ao importar a planilha.', 'error');
+      }
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.target.x = clamp(controls.target.x, -16, 16);
+      controls.target.y = clamp(controls.target.y, 0, 8.5);
+      controls.target.z = clamp(controls.target.z, -25, 12);
+      controls.update();
+      frameTick++;
+      if (frameTick % 12 === 0) updateLabelVisibility();
+      if (selectionFrame?.visible) {
+        const pulse = .78 + Math.sin(performance.now() * .005) * .20;
+        selectionFrame.material.opacity = pulse;
+        const s = 1 + Math.sin(performance.now() * .004) * .018;
+        selectionFrame.scale.setScalar(s);
+      }
+      renderer.render(scene, camera);
+    }
+
+    async function initApp() {
+      if (window.lucide) lucide.createIcons();
+      initThreeJS();
+      generateWarehouseLayout();
+      setupEvents();
+      animate();
+      loadCachedInventory();
+      updateStatsUI();
+      await syncInventory();
+    }
+
+    window.addEventListener('DOMContentLoaded', initApp, { once: true });
+  </script>
 </body>
 </html>
